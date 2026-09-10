@@ -1,0 +1,468 @@
+// ==============================================================================
+// POLINTRACK — CANONICAL PRISMA RELATIONAL SCHEMA (PHASE 1 & 7 VERIFIED)
+// ==============================================================================
+// 17 Physical Models | 9 Enums | Strict Referential Integrity & Auditability
+// ==============================================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==============================================================================
+// 1. SYSTEM ENUMS
+// ==============================================================================
+
+enum RoleType {
+  ADMIN
+  CONTABILIDAD
+  CONSULTA
+}
+
+enum WoodSpeciesEnum {
+  TECA
+  PINO
+  OTRAS
+}
+
+enum WoodTypeEnum {
+  TIMBRE
+  PROCESADA
+}
+
+enum UnitOfMeasure {
+  PIE_TABLAR // Mandatory for TIMBRE
+  PIEZAS     // Mandatory for PROCESADA
+}
+
+enum DispatchStatus {
+  COMPLETED
+  RETURNED_PARTIAL
+  RETURNED_TOTAL
+}
+
+enum ReturnTypeEnum {
+  TOTAL
+  PARCIAL
+}
+
+enum MovementType {
+  PRODUCTION // Increments physical stock (+)
+  DISPATCH   // Decrements physical stock (-)
+  RETURN     // Increments physical stock (+)
+  ADJUSTMENT // Signed adjustment (+/-)
+}
+
+enum AdjustmentType {
+  INCREMENT
+  DECREMENT
+}
+
+enum ReasonType {
+  ERROR_INGRESO
+  CUSTOM
+}
+
+// ==============================================================================
+// 2. USERS & AUTHENTICATION
+// ==============================================================================
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  fullName     String    @map("full_name") @db.VarChar(255)
+  role         RoleType  @default(CONSULTA)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  woodReceipts        WoodReceipt[]
+  dailyProductions    DailyProduction[]
+  fumigations         Fumigation[]
+  dispatchHeaders     DispatchHeader[]
+  returnHeaders       ReturnHeader[]
+  executedAdjustments InventoryAdjustment[]
+  inventoryMovements  InventoryMovement[]
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+// ==============================================================================
+// 3. MASTER CATALOGS
+// ==============================================================================
+
+model Supplier {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(255)
+  legalId     String?  @map("legal_id") @db.VarChar(100)
+  phone       String?  @db.VarChar(50)
+  notes       String?  @db.Text
+  documentUrl String?  @map("document_url") @db.VarChar(500)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  woodReceipts WoodReceipt[]
+
+  @@map("suppliers")
+}
+
+model WoodSpecies {
+  id        String          @id @default(uuid()) @db.Uuid
+  name      WoodSpeciesEnum @unique
+  isActive  Boolean         @default(true) @map("is_active")
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  woodReceipts WoodReceipt[]
+
+  @@map("wood_species")
+}
+
+model WoodType {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        WoodTypeEnum  @unique
+  defaultUnit UnitOfMeasure @map("default_unit")
+  description String?       @db.VarChar(255)
+  isActive    Boolean       @default(true) @map("is_active")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  woodReceipts WoodReceipt[]
+
+  @@map("wood_types")
+}
+
+model Product {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @unique @db.VarChar(255)
+  dimensions String   @db.VarChar(100) // 45x48, 45x47, 48x54, 48x64, 120x80
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  dailyProductions     DailyProduction[]
+  productionDetails    ProductionDetail[]
+  dispatchDetails      DispatchDetail[]
+  returnDetails        ReturnDetail[]
+  inventoryAdjustments InventoryAdjustment[]
+  inventoryMovements   InventoryMovement[]
+  fumigationDetails    FumigationDetail[]
+
+  @@map("products")
+}
+
+model ClientCenter {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(255) // Planta 1..6, Planta Camanica
+  location  String?  @db.VarChar(255)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  dispatchHeaders DispatchHeader[]
+
+  @@map("client_centers")
+}
+
+// ==============================================================================
+// 4. WOOD RECEPTION (RAW MATERIAL)
+// ==============================================================================
+
+model WoodReceipt {
+  id          String        @id @default(uuid()) @db.Uuid
+  lotNumber   String        @unique @map("lot_number") @db.VarChar(50) // LT-DDMMYY-XX
+  receiptDate DateTime      @map("receipt_date") @db.Date
+  receiptTime DateTime      @map("receipt_time") @db.Time
+  supplierId  String        @map("supplier_id") @db.Uuid
+  speciesId   String        @map("species_id") @db.Uuid
+  woodTypeId  String        @map("wood_type_id") @db.Uuid
+  quantity    Decimal       @db.Decimal(12, 2)
+  unit        UnitOfMeasure
+  yugosQuantity  Int?       @map("yugos_quantity")
+  reglasQuantity Int?       @map("reglas_quantity")
+  woodStatus  String?       @map("wood_status") @db.VarChar(100)
+  guideNumber String?       @map("guide_number") @db.VarChar(100)
+  createdById String        @map("created_by_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  supplier               Supplier                @relation(fields: [supplierId], references: [id])
+  species                WoodSpecies             @relation(fields: [speciesId], references: [id])
+  woodType               WoodType                @relation(fields: [woodTypeId], references: [id])
+  createdBy              User                    @relation(fields: [createdById], references: [id])
+  productionWoodReceipts ProductionWoodReceipt[]
+
+  @@index([lotNumber])
+  @@index([receiptDate])
+  @@index([supplierId])
+  @@map("wood_receipts")
+}
+
+// ==============================================================================
+// 5. DAILY PRODUCTION OF POLINES
+// ==============================================================================
+
+model DailyProduction {
+  id               String   @id @default(uuid()) @db.Uuid
+  productionLot    String   @map("production_lot") @db.VarChar(50) // LT-DDMMYY-WXX (operational label, not unique — multiple records per day allowed per TSK-20.3)
+  productionDate   DateTime @map("production_date") @db.Date
+  isoWeek          Int      @map("iso_week") // 1..53 ISO 8601
+  productId        String?  @map("product_id") @db.Uuid
+  quantityProduced Int?     @map("quantity_produced")
+  createdById      String   @map("created_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  product                Product?                @relation(fields: [productId], references: [id])
+  createdBy              User                    @relation(fields: [createdById], references: [id])
+  productionDetails      ProductionDetail[]
+  productionWoodReceipts ProductionWoodReceipt[]
+  fumigations            Fumigation[]
+  fumigationDetails      FumigationDetail[]
+  dispatchDetails        DispatchDetail[]
+
+  @@index([productionLot])
+  @@index([productionDate])
+  @@index([isoWeek])
+  @@map("daily_productions")
+}
+
+model ProductionDetail {
+  id                String   @id @default(uuid()) @db.Uuid
+  dailyProductionId String   @map("daily_production_id") @db.Uuid
+  productId         String   @map("product_id") @db.Uuid
+  quantityProduced  Int      @map("quantity_produced")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  dailyProduction DailyProduction @relation(fields: [dailyProductionId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  fumigationDetails FumigationDetail[]
+
+  @@unique([dailyProductionId, productId])
+  @@index([dailyProductionId])
+  @@index([productId])
+  @@map("production_details")
+}
+
+// M:N Referential link between DailyProduction and WoodReceipt (Traceability)
+model ProductionWoodReceipt {
+  id                String @id @default(uuid()) @db.Uuid
+  dailyProductionId String @map("daily_production_id") @db.Uuid
+  woodReceiptId     String @map("wood_receipt_id") @db.Uuid
+
+  dailyProduction DailyProduction @relation(fields: [dailyProductionId], references: [id], onDelete: Cascade)
+  woodReceipt     WoodReceipt     @relation(fields: [woodReceiptId], references: [id], onDelete: Restrict)
+
+  @@unique([dailyProductionId, woodReceiptId])
+  @@map("production_wood_receipts")
+}
+
+// ==============================================================================
+// 6. FUMIGATION & OIRSA CERTIFICATES
+// ==============================================================================
+
+model Fumigation {
+  id                String   @id @default(uuid()) @db.Uuid
+  dailyProductionId String?  @map("daily_production_id") @db.Uuid
+  fumigationDate    DateTime @map("fumigation_date") @db.Date
+  fumigationTime    DateTime @map("fumigation_time") @db.Time
+  certificateNumber String   @map("certificate_number") @db.VarChar(100)
+  observations      String?  @db.Text
+  pdfFilePath       String   @map("pdf_file_path") @db.VarChar(500)
+  pdfFileName       String   @map("pdf_file_name") @db.VarChar(255)
+  fileSizeBytes     Int      @map("file_size_bytes")
+  registeredById    String   @map("registered_by_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  dailyProduction DailyProduction?   @relation(fields: [dailyProductionId], references: [id])
+  registeredBy    User               @relation(fields: [registeredById], references: [id])
+  details         FumigationDetail[]
+
+  @@index([dailyProductionId])
+  @@index([fumigationDate])
+  @@index([certificateNumber])
+  @@map("fumigations")
+}
+
+model FumigationDetail {
+  id                 String   @id @default(uuid()) @db.Uuid
+  fumigationId       String   @map("fumigation_id") @db.Uuid
+  dailyProductionId  String   @map("daily_production_id") @db.Uuid
+  productId          String   @map("product_id") @db.Uuid
+  productionDetailId String?  @map("production_detail_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  fumigation       Fumigation        @relation(fields: [fumigationId], references: [id], onDelete: Cascade)
+  dailyProduction  DailyProduction   @relation(fields: [dailyProductionId], references: [id], onDelete: Restrict)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productionDetail ProductionDetail? @relation(fields: [productionDetailId], references: [id], onDelete: SetNull)
+
+  @@unique([fumigationId, dailyProductionId, productId])
+  @@index([fumigationId])
+  @@index([dailyProductionId])
+  @@index([productId])
+  @@map("fumigation_details")
+}
+
+// ==============================================================================
+// 7. COMMERCIAL DISPATCHES (HEADER - DETAIL)
+// ==============================================================================
+
+model DispatchHeader {
+  id             String         @id @default(uuid()) @db.Uuid
+  invoiceNumber  String         @unique @map("invoice_number") @db.VarChar(100)
+  dispatchDate   DateTime       @map("dispatch_date") @db.Date
+  dispatchTime   DateTime       @map("dispatch_time") @db.Time
+  clientCenterId String         @map("client_center_id") @db.Uuid
+  vehicleInfo    String?        @map("vehicle_info") @db.VarChar(100)
+  driverName     String?        @map("driver_name") @db.VarChar(100)
+  observations   String?        @db.Text
+  status         DispatchStatus @default(COMPLETED)
+  createdById    String         @map("created_by_id") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  clientCenter    ClientCenter     @relation(fields: [clientCenterId], references: [id])
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  dispatchDetails DispatchDetail[]
+  returnHeaders   ReturnHeader[]
+
+  @@index([invoiceNumber])
+  @@index([dispatchDate])
+  @@index([clientCenterId])
+  @@index([status])
+  @@map("dispatch_headers")
+}
+
+model DispatchDetail {
+  id                          String @id @default(uuid()) @db.Uuid
+  dispatchHeaderId            String @map("dispatch_header_id") @db.Uuid
+  dailyProductionId           String @map("daily_production_id") @db.Uuid
+  productId                   String @map("product_id") @db.Uuid
+  quantityDispatched          Int    @map("quantity_dispatched") // Immutable
+  dimensions                  String @db.VarChar(100)
+  quantityReturnedAccumulated Int    @default(0) @map("quantity_returned_accumulated")
+
+  dispatchHeader  DispatchHeader  @relation(fields: [dispatchHeaderId], references: [id], onDelete: Cascade)
+  dailyProduction DailyProduction @relation(fields: [dailyProductionId], references: [id])
+  product         Product         @relation(fields: [productId], references: [id])
+  returnDetails   ReturnDetail[]
+
+  @@index([dispatchHeaderId])
+  @@index([dailyProductionId])
+  @@index([productId])
+  @@map("dispatch_details")
+}
+
+// ==============================================================================
+// 8. COMMERCIAL RETURNS (HEADER - DETAIL)
+// ==============================================================================
+
+model ReturnHeader {
+  id               String         @id @default(uuid()) @db.Uuid
+  dispatchHeaderId String         @map("dispatch_header_id") @db.Uuid
+  returnDate       DateTime       @map("return_date") @db.Date
+  returnType       ReturnTypeEnum @map("return_type")
+  reason           String         @db.VarChar(255)
+  observations     String?        @db.Text
+  registeredById   String         @map("registered_by_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  dispatchHeader DispatchHeader @relation(fields: [dispatchHeaderId], references: [id])
+  registeredBy   User           @relation(fields: [registeredById], references: [id])
+  returnDetails  ReturnDetail[]
+
+  @@index([dispatchHeaderId])
+  @@index([returnDate])
+  @@map("return_headers")
+}
+
+model ReturnDetail {
+  id               String @id @default(uuid()) @db.Uuid
+  returnHeaderId   String @map("return_header_id") @db.Uuid
+  dispatchDetailId String @map("dispatch_detail_id") @db.Uuid
+  productId        String @map("product_id") @db.Uuid
+  quantityReturned Int    @map("quantity_returned")
+
+  returnHeader   ReturnHeader   @relation(fields: [returnHeaderId], references: [id], onDelete: Cascade)
+  dispatchDetail DispatchDetail @relation(fields: [dispatchDetailId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
+
+  @@index([returnHeaderId])
+  @@index([dispatchDetailId])
+  @@map("return_details")
+}
+
+// ==============================================================================
+// 9. AUTHORIZED INVENTORY ADJUSTMENTS
+// ==============================================================================
+
+model InventoryAdjustment {
+  id             String         @id @default(uuid()) @db.Uuid
+  productId      String         @map("product_id") @db.Uuid
+  adjustmentType AdjustmentType @map("adjustment_type")
+  quantity       Int
+  previousStock  Int            @map("previous_stock")
+  newStock       Int            @map("new_stock")
+  reasonType     ReasonType     @map("reason_type")
+  reasonNotes    String?        @map("reason_notes") @db.Text
+  executedById   String         @map("executed_by_id") @db.Uuid // Must be ADMIN (D-028)
+  executedAt     DateTime       @default(now()) @map("executed_at") @db.Timestamptz
+
+  product    Product @relation(fields: [productId], references: [id])
+  executedBy User    @relation(fields: [executedById], references: [id])
+
+  @@index([productId])
+  @@index([executedAt])
+  @@index([executedById])
+  @@map("inventory_adjustments")
+}
+
+// ==============================================================================
+// 10. INVENTORY MOVEMENT LEDGER (APPEND-ONLY)
+// ==============================================================================
+
+model InventoryMovement {
+  id             String       @id @default(uuid()) @db.Uuid
+  productId      String       @map("product_id") @db.Uuid
+  movementType   MovementType @map("movement_type")
+  deltaQuantity  Int          @map("delta_quantity") // Signed (+ or -)
+  referenceTable String       @map("reference_table") @db.VarChar(50)
+  referenceId    String       @map("reference_id") @db.Uuid
+  timestamp      DateTime     @default(now()) @db.Timestamptz
+  performedById  String       @map("performed_by_id") @db.Uuid
+
+  product     Product @relation(fields: [productId], references: [id])
+  performedBy User    @relation(fields: [performedById], references: [id])
+
+  @@index([productId, timestamp])
+  @@index([referenceTable, referenceId])
+  @@index([movementType])
+  @@map("inventory_movements")
+}
+
+// ==============================================================================
+// 11. TECHNICAL AUDIT LOG
+// ==============================================================================
+
+model AuditLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  tableName        String   @map("table_name") @db.VarChar(100)
+  recordId         String   @map("record_id") @db.Uuid
+  action           String   @db.VarChar(50) // INSERT, UPDATE_STATUS, CORRECTION
+  oldValues        Json?    @map("old_values")
+  newValues        Json?    @map("new_values")
+  correctionReason String?  @map("correction_reason") @db.Text
+  userId           String   @map("user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([tableName, recordId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

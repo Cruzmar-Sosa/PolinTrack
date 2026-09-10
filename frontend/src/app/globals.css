@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1D71CB;
+  --primary-hover: #165EA8;
+  --structural: #0D1B36;
+  --institutional: #3A6A44;
+  --success: #16A34A;
+  --warning: #D97706;
+  --destructive: #DC2626;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --card: #FFFFFF;
+  --border: #E2E8F0;
+  --muted: #64748B;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures for industrial precision (lotes, cantidades, facturas) */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Global accessible focus outline */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
