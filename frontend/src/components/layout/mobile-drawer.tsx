@@ -67,7 +67,7 @@ export function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
           >
             <div className="relative w-8 h-8 rounded-md overflow-hidden bg-white/10 p-1 flex items-center justify-center">
               <Image
-                src="/images/polintrack_logo.png"
+                src="/images/polintrack.png"
                 alt="PolinTrack Logo"
                 width={32}
                 height={32}

@@ -3,8 +3,11 @@ import { AuthProvider } from '@/lib/auth-context';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PolinTrack — Sistema de Gestión y Trazabilidad de Polines',
-  description: 'Sistema empresarial de gestión, producción, inventario y trazabilidad de polines de madera.',
+  title: 'PolinTrack — Sistema de Gestión y Trazabilidad',
+  description: 'Sistema operativo para plantas de polines y madera',
+  icons: {
+    icon: '/logotipo.jpg',
+  },
 };
 
 export default function RootLayout({
