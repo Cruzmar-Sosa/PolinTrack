@@ -84,16 +84,16 @@ export function ReportsDistributionTable({
         </div>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-xs text-left min-w-[850px]">
               <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-4">Centro Cliente</th>
-                  <th className="py-2.5 px-3 text-center">Facturas</th>
-                  <th className="py-2.5 px-4 text-right">Total Despachado</th>
-                  <th className="py-2.5 px-4 text-right">Devoluciones (-)</th>
-                  <th className="py-2.5 px-4 text-right">Neto Entregado</th>
-                  <th className="py-2.5 px-4 text-right">Participación</th>
+                  <th className="py-2.5 px-4 whitespace-nowrap">Centro Cliente</th>
+                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Facturas</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Total Despachado</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Devoluciones (-)</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Neto Entregado</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Participación</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -106,26 +106,26 @@ export function ReportsDistributionTable({
 
                     return (
                       <tr key={item.clientCenterId} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-2.5 px-4 font-bold text-slate-900">
+                        <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap">
                           {item.clientCenterName}
                         </td>
-                        <td className="py-2.5 px-3 font-mono text-center text-slate-600">
+                        <td className="py-2.5 px-3 font-mono text-center text-slate-600 whitespace-nowrap">
                           <span className="px-2 py-0.5 bg-slate-100 rounded border border-slate-200 text-xs">
                             {item.invoicesCount}
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-amber-900">
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-amber-900 whitespace-nowrap">
                           {item.totalDispatched.toLocaleString('es-NI')} pcs
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-rose-700">
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-rose-700 whitespace-nowrap">
                           {item.totalReturned > 0 ? `-${item.totalReturned.toLocaleString('es-NI')}` : '0'}{' '}
                           pcs
                         </td>
-                        <td className="py-2.5 px-4 font-mono font-black text-right tabular-nums text-slate-900 text-sm">
+                        <td className="py-2.5 px-4 font-mono font-black text-right tabular-nums text-slate-900 text-sm whitespace-nowrap">
                           {item.netDelivered.toLocaleString('es-NI')}{' '}
                           <span className="text-[10px] text-slate-400 font-sans font-normal">pcs</span>
                         </td>
-                        <td className="py-2.5 px-4 font-mono font-bold text-right tabular-nums text-slate-700">
+                        <td className="py-2.5 px-4 font-mono font-bold text-right tabular-nums text-slate-700 whitespace-nowrap">
                           {participation}%
                         </td>
                       </tr>

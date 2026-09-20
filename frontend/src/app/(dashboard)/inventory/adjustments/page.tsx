@@ -497,17 +497,17 @@ export default function InventoryAdjustmentsPage() {
             </div>
           )}
 
-          <Table>
+          <Table className="min-w-[1000px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[170px]">Fecha / Hora</TableHead>
-                <TableHead>Producto Afectado</TableHead>
-                <TableHead className="w-[140px]">Tipo</TableHead>
-                <TableHead className="text-right w-[110px]">Cantidad</TableHead>
-                <TableHead className="text-center w-[170px]">Balance Fotográfico</TableHead>
-                <TableHead className="w-[140px]">Motivo</TableHead>
-                <TableHead>Ejecutado Por</TableHead>
-                <TableHead className="text-right w-[90px]">Detalle</TableHead>
+                <TableHead className="w-[170px] whitespace-nowrap">Fecha / Hora</TableHead>
+                <TableHead className="whitespace-nowrap">Producto Afectado</TableHead>
+                <TableHead className="w-[140px] whitespace-nowrap">Tipo</TableHead>
+                <TableHead className="text-right w-[110px] whitespace-nowrap">Cantidad</TableHead>
+                <TableHead className="text-center w-[180px] whitespace-nowrap">Balance Fotográfico</TableHead>
+                <TableHead className="w-[140px] whitespace-nowrap">Motivo</TableHead>
+                <TableHead className="whitespace-nowrap">Ejecutado Por</TableHead>
+                <TableHead className="text-right w-[90px] whitespace-nowrap">Detalle</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -526,8 +526,8 @@ export default function InventoryAdjustmentsPage() {
 
                   return (
                     <TableRow key={adj.id} className="hover:bg-slate-50/70 transition-colors">
-                      <TableCell className="font-mono text-xs text-slate-600">{dt.full}</TableCell>
-                      <TableCell className="font-semibold text-slate-900 text-xs">
+                      <TableCell className="font-mono text-xs text-slate-600 whitespace-nowrap">{dt.full}</TableCell>
+                      <TableCell className="font-semibold text-slate-900 text-xs whitespace-nowrap">
                         {adj.product ? (
                           <span>
                             {adj.product.name}{' '}
@@ -539,7 +539,7 @@ export default function InventoryAdjustmentsPage() {
                           <span className="font-mono text-slate-400 text-xs">{adj.productId}</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {isInc ? (
                           <Badge variant="success">
                             <ArrowDownLeft className="w-3 h-3 mr-1 inline" />
@@ -552,25 +552,25 @@ export default function InventoryAdjustmentsPage() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-bold text-xs tabular-nums">
+                      <TableCell className="text-right font-mono font-bold text-xs tabular-nums whitespace-nowrap">
                         <span className={isInc ? 'text-emerald-700' : 'text-rose-700'}>
                           {isInc ? `+${adj.quantity}` : `-${adj.quantity}`} pcs
                         </span>
                       </TableCell>
-                      <TableCell className="text-center font-mono text-xs tabular-nums">
+                      <TableCell className="text-center font-mono text-xs tabular-nums whitespace-nowrap">
                         <span className="text-slate-500">{adj.previousStock}</span>
                         <span className="text-slate-400 mx-1.5">→</span>
                         <span className="font-bold text-slate-900">{adj.newStock} pcs</span>
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="text-xs whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                           {adj.reasonType === 'ERROR_INGRESO' ? 'Error Ingreso' : 'Personalizado'}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs text-slate-600">
+                      <TableCell className="text-xs text-slate-600 whitespace-nowrap">
                         {adj.executedBy?.fullName || 'Administrador'}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
                         <Button
                           variant="ghost"
                           size="sm"

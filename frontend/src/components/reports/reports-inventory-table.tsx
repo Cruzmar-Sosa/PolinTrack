@@ -49,7 +49,7 @@ export function ReportsInventoryTable({
             </span>
             {(summary.totalReturnedRework !== undefined || summary.totalReturnedScrap !== undefined) && (
               <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">
-                {summary.totalReturnedRework ?? 0} Rep · {summary.totalReturnedScrap ?? 0} Des
+                {summary.totalReturnedRework ?? 0} Reproceso · {summary.totalReturnedScrap ?? 0} Desecho
               </span>
             )}
           </div>
@@ -92,18 +92,18 @@ export function ReportsInventoryTable({
         </div>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-xs text-left min-w-[950px]">
               <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-4">Producto Terminado</th>
-                  <th className="py-2.5 px-3">Dimensiones</th>
-                  <th className="py-2.5 px-4 text-right">Producción (+)</th>
-                  <th className="py-2.5 px-4 text-right">Despachos (-)</th>
-                  <th className="py-2.5 px-4 text-right">Devoluciones (+)</th>
-                  <th className="py-2.5 px-4 text-right">Ajustes Netos (±)</th>
-                  <th className="py-2.5 px-4 text-right">Stock Disponible en Patio</th>
-                  <th className="py-2.5 px-3 text-center">Nivel</th>
+                  <th className="py-2.5 px-4 whitespace-nowrap">Producto Terminado</th>
+                  <th className="py-2.5 px-3 whitespace-nowrap">Dimensiones</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Producción (+)</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Despachos (-)</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Devoluciones (+)</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Ajustes Netos (±)</th>
+                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Stock Disponible en Patio</th>
+                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Nivel</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -111,42 +111,53 @@ export function ReportsInventoryTable({
                   data.map((item) => {
                     const isZero = item.currentAvailableStock <= 0;
                     const isLow = item.currentAvailableStock > 0 && item.currentAvailableStock < 100;
+                    const reworkQty = item.totalReturnedRework ?? item.totalReturned ?? 0;
+                    const scrapQty = item.totalReturnedScrap ?? 0;
 
                     return (
                       <tr key={item.productId} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-2.5 px-4 font-bold text-slate-900">
+                        <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap">
                           {item.productName}
                         </td>
-                        <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
+                        <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px] whitespace-nowrap">
                           {item.dimensions}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-blue-900">
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-blue-900 whitespace-nowrap">
                           {item.totalProduced.toLocaleString('es-NI')}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-amber-900">
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-amber-900 whitespace-nowrap">
                           {item.totalDispatched.toLocaleString('es-NI')}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-emerald-800">
-                          <div>+{item.totalReturned.toLocaleString('es-NI')}</div>
-                          {(item.totalReturnedRework !== undefined || item.totalReturnedScrap !== undefined) && (
-                            <div className="text-[10px] space-x-1 mt-0.5">
-                              {(item.totalReturnedRework ?? 0) > 0 && (
-                                <span className="text-emerald-700 font-semibold">
-                                  +{item.totalReturnedRework} rep
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-emerald-800 whitespace-nowrap">
+                          {reworkQty === 0 && scrapQty === 0 ? (
+                            <span className="text-slate-400">0</span>
+                          ) : (
+                            <div className="flex flex-col gap-1 items-end">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-emerald-600 font-bold">
+                                  +{reworkQty.toLocaleString('es-NI')}
                                 </span>
-                              )}
-                              {(item.totalReturnedScrap ?? 0) > 0 && (
-                                <span className="text-rose-600 font-semibold">
-                                  {item.totalReturnedScrap} des
+                                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                  Reproceso
                                 </span>
+                              </div>
+                              {scrapQty > 0 && (
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="font-mono text-rose-600 font-bold">
+                                    {scrapQty.toLocaleString('es-NI')}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Desecho
+                                  </span>
+                                </div>
                               )}
                             </div>
                           )}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-slate-600">
+                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-slate-600 whitespace-nowrap">
                           {item.netAdjustments > 0 ? `+${item.netAdjustments}` : item.netAdjustments}
                         </td>
-                        <td className="py-2.5 px-4 font-mono font-black text-right tabular-nums text-slate-900 text-sm">
+                        <td className="py-2.5 px-4 font-mono font-black text-right tabular-nums text-slate-900 text-sm whitespace-nowrap">
                           <span
                             className={
                               isZero
@@ -160,7 +171,7 @@ export function ReportsInventoryTable({
                           </span>
                           <span className="text-[10px] text-slate-400 font-sans font-normal ml-1">pcs</span>
                         </td>
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
                           <Badge
                             variant={isZero ? 'destructive' : isLow ? 'warning' : 'success'}
                             size="sm"

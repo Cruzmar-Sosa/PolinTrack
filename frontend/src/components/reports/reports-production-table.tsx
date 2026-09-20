@@ -52,19 +52,19 @@ export function ReportsProductionTable({
       </div>
 
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-xs text-left min-w-[1000px]">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th className="py-2.5 px-4">Fecha</th>
-                <th className="py-2.5 px-3">Lote Producción</th>
-                <th className="py-2.5 px-3 text-center">Tipo de Ingreso</th>
-                <th className="py-2.5 px-3 text-center">Semana ISO</th>
-                <th className="py-2.5 px-3">Producto</th>
-                <th className="py-2.5 px-3">Dimensiones</th>
-                <th className="py-2.5 px-4 text-right">Piezas Producidas</th>
-                <th className="py-2.5 px-3">Lotes Madera Origen</th>
-                <th className="py-2.5 px-4">Supervisor</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Fecha</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Lote Producción</th>
+                <th className="py-2.5 px-3 text-center whitespace-nowrap">Tipo de Ingreso</th>
+                <th className="py-2.5 px-3 text-center whitespace-nowrap">Semana ISO</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Producto</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Dimensiones</th>
+                <th className="py-2.5 px-4 text-right whitespace-nowrap">Piezas Producidas</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Lotes Madera Origen</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Supervisor</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -88,15 +88,15 @@ export function ReportsProductionTable({
                         </Badge>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-center">
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <Badge variant="default" size="sm">
                         W{item.isoWeek}
                       </Badge>
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-800 truncate max-w-[150px]" title={item.productName}>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800 truncate max-w-[150px] whitespace-nowrap" title={item.productName}>
                       {item.productName}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
+                    <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px] whitespace-nowrap">
                       {item.dimensions}
                     </td>
                     <td className="py-2.5 px-4 font-mono font-bold text-right tabular-nums text-slate-900 whitespace-nowrap">
@@ -107,17 +107,17 @@ export function ReportsProductionTable({
                       {item.woodReceiptLots && item.woodReceiptLots.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {item.woodReceiptLots.map((wLot, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200">
+                            <span key={i} className="px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200 whitespace-nowrap">
                               {wLot}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic">-</span>
+                        <span className="text-slate-400 italic">No vinculado</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-600 truncate max-w-[130px]" title={item.supervisor}>
-                      {item.supervisor}
+                    <td className="py-2.5 px-4 text-slate-600 truncate max-w-[140px] whitespace-nowrap" title={item.supervisor || '-'}>
+                      {item.supervisor || '-'}
                     </td>
                   </tr>
                 ))

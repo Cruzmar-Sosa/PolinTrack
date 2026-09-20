@@ -89,6 +89,22 @@ interface KardexMeta {
   totalPages: number;
 }
 
+// Helper to map technical table names to business modules
+function formatReferenceTable(table: string): string {
+  const tableMap: Record<string, string> = {
+    daily_productions: 'Producción Diaria',
+    return_details: 'Devolución Comercial',
+    dispatch_details: 'Despacho a Cliente',
+    inventory_adjustments: 'Ajuste de Stock',
+    fumigation_details: 'Tratamiento Fitosanitario',
+    wood_receipts: 'Recepción de Madera',
+    production_details: 'Producción Diaria',
+    returns: 'Devolución Comercial',
+    dispatches: 'Despacho a Cliente',
+  };
+  return tableMap[table] || table.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
 export default function InventoryPage() {
   const { session, role } = useAuth();
   const token = session?.access_token;
@@ -421,7 +437,7 @@ export default function InventoryPage() {
               </div>
             )}
 
-            <Table>
+            <Table className="min-w-[950px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[280px]">Producto</TableHead>
@@ -449,40 +465,57 @@ export default function InventoryPage() {
 
                     return (
                       <TableRow key={item.productId} className="hover:bg-slate-50/70 transition-colors">
-                        <TableCell className="font-semibold text-slate-900">
+                        <TableCell className="font-semibold text-slate-900 whitespace-nowrap">
                           {item.productName}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                             {item.dimensions}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-slate-700">
+                        <TableCell className="text-right font-mono text-slate-700 whitespace-nowrap">
                           +{item.producedQuantity.toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-slate-700">
+                        <TableCell className="text-right font-mono text-slate-700 whitespace-nowrap">
                           -{item.dispatchedQuantity.toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-slate-700">
-                          <div>
-                            {item.returnedQuantity > 0 ? `+${item.returnedQuantity.toLocaleString()}` : '0'}
-                          </div>
-                          {(item.totalReturnedRework !== undefined || item.totalReturnedScrap !== undefined) && (
-                            <div className="text-[10px] space-x-1 mt-0.5">
-                              {(item.totalReturnedRework ?? 0) > 0 && (
-                                <span className="text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
-                                  +{item.totalReturnedRework} rep
-                                </span>
-                              )}
-                              {(item.totalReturnedScrap ?? 0) > 0 && (
-                                <span className="text-rose-700 font-semibold bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
-                                  {item.totalReturnedScrap} des
-                                </span>
-                              )}
-                            </div>
-                          )}
+                        <TableCell className="text-right whitespace-nowrap">
+                          {(() => {
+                            const reworkQty = item.totalReturnedRework ?? item.returnedQuantity ?? 0;
+                            const scrapQty = item.totalReturnedScrap ?? 0;
+
+                            if (reworkQty === 0 && scrapQty === 0) {
+                              return <span className="font-mono text-slate-400">0</span>;
+                            }
+
+                            return (
+                              <div className="flex flex-col gap-1 items-end">
+                                {/* Total general o Reproceso */}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-emerald-600 font-bold">
+                                    +{reworkQty.toLocaleString()}
+                                  </span>
+                                  <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Reproceso
+                                  </span>
+                                </div>
+
+                                {/* Desecho (Solo si existe > 0) */}
+                                {scrapQty > 0 && (
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="font-mono text-rose-600 font-bold">
+                                      {scrapQty.toLocaleString()}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                      Desecho
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           {item.adjustmentNetQuantity > 0 ? (
                             <span className="text-emerald-700">+{item.adjustmentNetQuantity}</span>
                           ) : item.adjustmentNetQuantity < 0 ? (
@@ -491,7 +524,7 @@ export default function InventoryPage() {
                             <span className="text-slate-400">0</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-mono font-bold text-sm">
+                        <TableCell className="text-right font-mono font-bold text-sm whitespace-nowrap">
                           <span
                             className={`px-2.5 py-1 rounded-full border ${
                               isZeroStock
@@ -620,15 +653,15 @@ export default function InventoryPage() {
                 </div>
               )}
 
-              <Table>
+              <Table className="min-w-[1050px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[180px]">Fecha / Hora</TableHead>
-                    <TableHead className="w-[150px]">Tipo Movimiento</TableHead>
+                    <TableHead className="w-[160px]">Tipo Movimiento</TableHead>
                     <TableHead>Producto Afectado</TableHead>
-                    <TableHead className="text-right w-[130px]">Variación (Delta)</TableHead>
-                    <TableHead>Referencia Origen</TableHead>
-                    <TableHead>Ejecutado Por</TableHead>
+                    <TableHead className="text-right w-[150px]">Variación (Delta)</TableHead>
+                    <TableHead className="w-[200px]">Referencia Origen</TableHead>
+                    <TableHead className="w-[160px]">Ejecutado Por</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -647,10 +680,10 @@ export default function InventoryPage() {
 
                       return (
                         <TableRow key={mov.id} className="hover:bg-slate-50/70 transition-colors">
-                          <TableCell className="font-mono text-xs text-slate-600">
+                          <TableCell className="font-mono text-xs text-slate-600 whitespace-nowrap">
                             {dt.full}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             {mov.movementType === 'PRODUCTION' && (
                               <Badge variant="success">
                                 <ArrowDownLeft className="w-3 h-3 mr-1 inline" />
@@ -689,7 +722,7 @@ export default function InventoryPage() {
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="font-semibold text-slate-900 text-xs">
+                          <TableCell className="font-semibold text-slate-900 text-xs whitespace-nowrap">
                             {mov.product ? (
                               <span>
                                 {mov.product.name}{' '}
@@ -701,11 +734,16 @@ export default function InventoryPage() {
                               <span className="font-mono text-slate-400 text-xs">{mov.productId}</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right font-mono font-bold text-xs">
+                          <TableCell className="text-right font-mono font-bold text-xs whitespace-nowrap">
                             {mov.movementType === 'RETURN' && mov.destination === 'DESECHO' ? (
-                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-300">
-                                0 pcs <span className="text-[10px] text-rose-600 font-normal">({mov.metadata?.discardedPieces ?? 0} desecho)</span>
-                              </span>
+                              <div className="flex flex-col items-end gap-1">
+                                <Badge variant="neutral" className="text-slate-500 font-mono border-slate-200">
+                                  0 pcs
+                                </Badge>
+                                <span className="text-[10px] text-rose-600 font-semibold uppercase tracking-wider bg-rose-50 border border-rose-200/60 px-1.5 py-0.5 rounded">
+                                  {mov.metadata?.discardedPieces ?? Math.abs(mov.deltaQuantity)} a Desecho
+                                </span>
+                              </div>
                             ) : (
                               <span
                                 className={`px-2 py-0.5 rounded ${
@@ -718,15 +756,20 @@ export default function InventoryPage() {
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-slate-500">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600">
-                              {mov.referenceTable}
-                            </span>{' '}
-                            <span title={mov.referenceId}>
-                              #{mov.referenceId.slice(0, 8)}...
-                            </span>
+                          <TableCell className="whitespace-nowrap">
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className="font-semibold text-slate-800 text-xs">
+                                {formatReferenceTable(mov.referenceTable)}
+                              </span>
+                              <span
+                                title={mov.referenceId}
+                                className="font-mono text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 cursor-help"
+                              >
+                                {mov.referenceId.substring(0, 8)}
+                              </span>
+                            </div>
                           </TableCell>
-                          <TableCell className="text-xs text-slate-600">
+                          <TableCell className="text-xs text-slate-600 whitespace-nowrap">
                             {mov.performedBy?.fullName || 'Sistema'}
                           </TableCell>
                         </TableRow>

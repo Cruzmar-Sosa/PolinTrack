@@ -121,18 +121,18 @@ export function ReportsFumigationsTable({
       )}
 
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-xs text-left min-w-[950px]">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th className="py-2.5 px-4">Fecha</th>
-                <th className="py-2.5 px-3">Hora</th>
-                <th className="py-2.5 px-3">Certificado OIRSA</th>
-                <th className="py-2.5 px-3">Lote(s) Tratado(s)</th>
-                <th className="py-2.5 px-3">Productos Tratados</th>
-                <th className="py-2.5 px-3">Archivo PDF</th>
-                <th className="py-2.5 px-4">Registrado Por</th>
-                <th className="py-2.5 px-4 text-center">Acción</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Fecha</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Hora</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Certificado OIRSA</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Lote(s) Tratado(s)</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Productos Tratados</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Archivo PDF</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Registrado Por</th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -148,7 +148,7 @@ export function ReportsFumigationsTable({
                     <td className="py-2.5 px-3 font-mono font-bold text-purple-900 whitespace-nowrap">
                       {item.certificateNumber}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-700">
+                    <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
                       {item.productionLots && item.productionLots.length > 1 ? (
                         <div className="flex flex-wrap items-center gap-1">
                           <span className="font-bold text-[#1D71CB]">{item.productionLots[0]}</span>
