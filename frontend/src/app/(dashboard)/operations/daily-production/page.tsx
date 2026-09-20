@@ -14,6 +14,7 @@ import {
   Drawer,
   TablePagination,
 } from '@/components/ui';
+import { InitialInventoryModal } from '@/components/operations/daily-production/initial-inventory-modal';
 import {
   Factory,
   Calendar,
@@ -142,15 +143,7 @@ function calculateISOWeek(dateStr: string): { isoWeek: number; previewLot: strin
   return { isoWeek, previewLot };
 }
 
-// Client-side helper to preview Initial Inventory lot format (INV-INI-DDMMYY-XX)
-function calculateInitialInventoryLot(dateStr: string): { previewLot: string } {
-  if (!dateStr) return { previewLot: 'INV-INI-DDMMYY-01' };
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return { previewLot: 'INV-INI-DDMMYY-01' };
-  const shortYear = parts[0].slice(2);
-  const previewLot = `INV-INI-${parts[2]}${parts[1]}${shortYear}-01`;
-  return { previewLot };
-}
+
 
 export default function DailyProductionPage() {
   const { role, session, user } = useAuth();
@@ -193,12 +186,8 @@ export default function DailyProductionPage() {
   ]);
   const [formWoodReceiptIds, setFormWoodReceiptIds] = useState<string[]>([]);
 
-  // Modal Initial Inventory (TSK-PRD-INI)
-  const [isInitialModalOpen, setIsInitialModalOpen] = useState(false);
-  const [initialDate, setInitialDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [initialQuantities, setInitialQuantities] = useState<Record<string, string>>({});
-  const [initialModalError, setInitialModalError] = useState<string | null>(null);
-  const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
+  // Modal Initial Inventory (TSK-PRD-INI-UI)
+  const [isInitialInventoryModalOpen, setIsInitialInventoryModalOpen] = useState(false);
 
   // Drawer / Detail Modal
   const [selectedProduction, setSelectedProduction] = useState<DailyProduction | null>(null);
@@ -211,16 +200,7 @@ export default function DailyProductionPage() {
     return calculateISOWeek(formProductionDate);
   }, [formProductionDate]);
 
-  const { previewLot: currentInitialPreviewLot } = useMemo(() => {
-    return calculateInitialInventoryLot(initialDate);
-  }, [initialDate]);
 
-  const totalInitialPieces = useMemo(() => {
-    return Object.values(initialQuantities).reduce((sum, val) => {
-      const q = parseInt(val, 10);
-      return sum + (isNaN(q) || q <= 0 ? 0 : q);
-    }, 0);
-  }, [initialQuantities]);
 
   // Load all operational and catalog data
   const loadData = async () => {
@@ -453,83 +433,7 @@ export default function DailyProductionPage() {
     }
   };
 
-  // Initial Inventory Handlers (TSK-PRD-INI)
-  const handleOpenInitialModal = () => {
-    setInitialModalError(null);
-    setInitialDate(new Date().toISOString().split('T')[0]);
-    const initialMap: Record<string, string> = {};
-    products.forEach((p) => {
-      initialMap[p.id] = '';
-    });
-    setInitialQuantities(initialMap);
-    setIsInitialModalOpen(true);
-  };
 
-  const handleInitialQuantityChange = (productId: string, val: string) => {
-    setInitialQuantities((prev) => ({
-      ...prev,
-      [productId]: val,
-    }));
-  };
-
-  const handleSubmitInitialInventory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInitialModalError(null);
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (initialDate > todayStr) {
-      setInitialModalError('La fecha de registro no puede ser posterior al día de hoy.');
-      return;
-    }
-
-    const validProducts = Object.entries(initialQuantities)
-      .map(([productId, qtyStr]) => ({
-        productId,
-        quantityProduced: parseInt(qtyStr, 10),
-      }))
-      .filter((p) => !isNaN(p.quantityProduced) && p.quantityProduced > 0);
-
-    if (validProducts.length === 0) {
-      setInitialModalError('Debe ingresar una cantidad mayor a cero al menos para un producto.');
-      return;
-    }
-
-    try {
-      setIsSubmittingInitial(true);
-      const payload = {
-        productionDate: initialDate,
-        isInitialInventory: true,
-        products: validProducts,
-      };
-
-      const res = await fetch(`${apiUrl}/daily-productions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const resJson = await res.json();
-      if (!res.ok) {
-        throw new Error(resJson.message || 'Error al registrar el inventario inicial.');
-      }
-
-      const lotCreated = resJson.data?.productionLot || currentInitialPreviewLot;
-      setSuccessMessage(
-        `Inventario Inicial registrado exitosamente. Lote oficial generado: ${lotCreated} con ${validProducts.length} producto(s) y ${totalInitialPieces} piezas ingresadas al Kardex.`,
-      );
-      setTimeout(() => setSuccessMessage(null), 8000);
-      setIsInitialModalOpen(false);
-      loadData();
-      setCurrentPage(1);
-    } catch (err: any) {
-      setInitialModalError(err.message || 'Error inesperado al registrar el inventario inicial.');
-    } finally {
-      setIsSubmittingInitial(false);
-    }
-  };
 
   const toggleWoodReceiptSelection = (receiptId: string) => {
     setFormWoodReceiptIds((prev) =>
@@ -574,32 +478,22 @@ export default function DailyProductionPage() {
           </MutedText>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {isMutationAllowed ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={handleOpenInitialModal}
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center gap-2 shadow-xs"
-              >
-                <Layers className="w-4 h-4 text-purple-600" />
-                <span>⚙️ Cargar Inventario Inicial</span>
-              </Button>
-              <Button
-                variant="default"
-                onClick={handleOpenCreateModal}
-                className="bg-[#1D71CB] hover:bg-[#165ba3] text-white flex items-center gap-2 shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Registrar Producción</span>
-              </Button>
-            </>
-          ) : (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2">
-              <Info className="w-3.5 h-3.5 text-amber-600" />
-              <span>Modo Solo Lectura (Rol CONSULTA)</span>
-            </div>
+        <div className="flex items-center gap-3">
+          {/* Renderizado condicional exclusivo para ADMIN y CONTABILIDAD */}
+          {(user?.role === 'ADMIN' || user?.role === 'CONTABILIDAD') && (
+            <Button
+              variant="outline"
+              onClick={() => setIsInitialInventoryModalOpen(true)}
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+            >
+              <Layers className="w-4 h-4 text-purple-600" />
+              <span className="hidden sm:inline">Cargar Inventario Inicial</span>
+            </Button>
           )}
+          <Button onClick={handleOpenCreateModal} className="bg-[#1D71CB] hover:bg-[#165EA8] gap-2">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Registrar Producción</span>
+          </Button>
         </div>
       </div>
 
@@ -1187,155 +1081,20 @@ export default function DailyProductionPage() {
             </form>
       </Dialog>
 
-      {/* Modal de Registro de Inventario Inicial (M04 / M10) */}
-      <Dialog
-        isOpen={isInitialModalOpen}
-        onClose={() => !isSubmittingInitial && setIsInitialModalOpen(false)}
-        size="lg"
-        headerVariant="industrial"
-        subtitle="M04 / M10 — Línea Base Operativa"
-        title="Registro de Inventario Inicial Físico"
-      >
-        <form onSubmit={handleSubmitInitialInventory} className="p-6 space-y-4">
-          {initialModalError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{initialModalError}</span>
-            </div>
-          )}
-
-          {/* Fila 1: Fecha y Responsable */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                Fecha de Registro *
-              </label>
-              <input
-                type="date"
-                max={new Date().toISOString().split('T')[0]}
-                value={initialDate}
-                onChange={(e) => setInitialDate(e.target.value)}
-                className="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                Responsable / Supervisor
-              </label>
-              <div className="w-full text-sm bg-slate-100 border border-slate-300 rounded-lg p-2.5 text-slate-700 flex items-center gap-2">
-                <User className="w-4 h-4 text-slate-400 shrink-0" />
-                <span className="font-medium truncate">
-                  {user?.fullName || user?.email || 'Usuario Actual'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Preview del Lote */}
-          <div>
-            <div className="w-full text-xs bg-purple-50/70 border border-purple-200 rounded-lg p-2.5 text-purple-900 font-mono flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Layers className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                <span>Lote Estimado: <strong>[ {currentInitialPreviewLot} ]</strong></span>
-              </div>
-              <span className="text-[10px] font-sans font-medium text-purple-700 bg-purple-100 px-2 py-0.5 rounded border border-purple-200">
-                Prefijo Oficial: INV-INI-
-              </span>
-            </div>
-          </div>
-
-          {/* Fila 2 (Aviso): Banner informativo azul */}
-          <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div className="space-y-0.5">
-              <p className="font-semibold">Línea Base de Existencias</p>
-              <p className="text-blue-800 text-[11px] leading-relaxed">
-                El Inventario Inicial establecerá la línea base de existencias sin requerir un lote de materia prima de origen. Los saldos ingresarán de forma inmutable al Kardex bajo el tipo <strong>INITIAL_INVENTORY</strong> con lote determinístico.
-              </p>
-            </div>
-          </div>
-
-          {/* Fila 3: Ingreso Rápido en Cuadrícula */}
-          <div className="space-y-2 pt-2 border-t border-slate-200">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-700 uppercase">
-                Productos Activos del Catálogo ({products.length})
-              </label>
-              <span className="text-[11px] text-slate-500">
-                Ingrese cantidades solo para los productos con stock físico
-              </span>
-            </div>
-
-            <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
-              {products.length === 0 ? (
-                <p className="text-xs text-slate-400 italic p-4 text-center">
-                  No hay productos activos registrados en el catálogo.
-                </p>
-              ) : (
-                products.map((p) => (
-                  <div
-                    key={p.id}
-                    className="p-2.5 px-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{p.name}</p>
-                      <p className="text-[11px] text-slate-400 font-mono">{p.dimensions}</p>
-                    </div>
-                    <div className="w-36 flex items-center gap-1.5 shrink-0">
-                      <input
-                        type="number"
-                        step="1"
-                        min="0"
-                        placeholder="0"
-                        value={initialQuantities[p.id] || ''}
-                        onChange={(e) => handleInitialQuantityChange(p.id, e.target.value)}
-                        className="w-full text-right text-xs bg-slate-50 border border-slate-300 rounded-lg p-1.5 focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-mono font-bold text-slate-800"
-                      />
-                      <span className="text-[11px] font-medium text-slate-500">pcs</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="p-3 rounded-lg bg-purple-50/70 border border-purple-200 flex items-center justify-between text-xs">
-              <span className="text-purple-900 font-semibold">
-                Total piezas iniciales a inyectar al Kardex:
-              </span>
-              <span className="font-bold text-purple-800 text-sm font-mono">
-                {totalInitialPieces.toLocaleString('es-NI')} pcs
-              </span>
-            </div>
-          </div>
-
-          {/* Acciones */}
-          <div className="pt-4 border-t border-slate-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsInitialModalOpen(false)}
-              disabled={isSubmittingInitial}
-              className="px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmittingInitial || totalInitialPieces <= 0}
-              className="px-5 py-2 text-sm font-semibold bg-purple-700 hover:bg-purple-800 text-white rounded-lg shadow transition disabled:opacity-50 flex items-center gap-2"
-            >
-              {isSubmittingInitial ? (
-                <>
-                  <span className="animate-spin text-xs">⏳</span>
-                  <span>Inyectando Saldos...</span>
-                </>
-              ) : (
-                <span>Cargar Inventario Inicial</span>
-              )}
-            </button>
-          </div>
-        </form>
-      </Dialog>
+      {/* Modal Especializado de Carga de Inventario Inicial Físico (TSK-PRD-INI-UI) */}
+      <InitialInventoryModal
+        isOpen={isInitialInventoryModalOpen}
+        onClose={() => setIsInitialInventoryModalOpen(false)}
+        initialProducts={products}
+        onSuccess={(lotCreated, totalPieces) => {
+          setSuccessMessage(
+            `Inventario Inicial registrado exitosamente. Lote oficial generado: ${lotCreated} con ${totalPieces.toLocaleString('es-NI')} piezas ingresadas al Kardex.`,
+          );
+          setTimeout(() => setSuccessMessage(null), 8000);
+          loadData();
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 }

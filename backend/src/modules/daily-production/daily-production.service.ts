@@ -105,8 +105,8 @@ export class DailyProductionService {
   async create(dto: CreateDailyProductionDto, userId: string) {
     const isInitialInventory = dto.isInitialInventory === true;
 
-    // 1. Normalize items list (supports new array format and legacy single-product format)
-    let items: ProductionProductItemDto[] = dto.products || [];
+    // 1. Normalize items list (supports products array, details alias, and legacy single-product format)
+    let items: ProductionProductItemDto[] = dto.products || dto.details || [];
     if (items.length === 0 && dto.productId && dto.quantityProduced) {
       items = [
         {

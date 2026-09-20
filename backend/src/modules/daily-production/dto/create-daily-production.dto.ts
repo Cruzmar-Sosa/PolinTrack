@@ -67,6 +67,17 @@ export class CreateDailyProductionDto {
   @Type(() => ProductionProductItemDto)
   products?: ProductionProductItemDto[];
 
+  @ApiPropertyOptional({
+    description: 'Lista de detalles de productos terminados fabricados (alias de products)',
+    type: [ProductionProductItemDto],
+  })
+  @IsOptional()
+  @IsArray({ message: 'details debe ser una lista de productos' })
+  @ArrayMinSize(1, { message: 'Debe incluir al menos un producto en la lista de details' })
+  @ValidateNested({ each: true })
+  @Type(() => ProductionProductItemDto)
+  details?: ProductionProductItemDto[];
+
   // Campos de retrocompatibilidad para clientes que envían producto único
   @ApiPropertyOptional({
     description: 'UUID del producto (retrocompatibilidad para cliente individual)',

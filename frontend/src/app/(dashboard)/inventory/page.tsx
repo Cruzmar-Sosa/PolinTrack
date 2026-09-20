@@ -658,7 +658,7 @@ export default function InventoryPage() {
                               </Badge>
                             )}
                             {mov.movementType === 'INITIAL_INVENTORY' && (
-                              <Badge variant="purple">
+                              <Badge variant="purple" className="bg-purple-100 text-purple-800 border-purple-200">
                                 <Layers className="w-3 h-3 mr-1 inline" />
                                 INVENTARIO INICIAL
                               </Badge>

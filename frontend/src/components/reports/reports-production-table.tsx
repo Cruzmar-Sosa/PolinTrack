@@ -84,7 +84,7 @@ export function ReportsProductionTable({
                         </Badge>
                       ) : (
                         <Badge variant="default" size="sm">
-                          PRODUCCIÓN
+                          PRODUCCIÓN REGULAR
                         </Badge>
                       )}
                     </td>

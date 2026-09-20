@@ -71,21 +71,19 @@ export function TraceabilityTimelineStages({
 
           <CardContent className="p-3.5 pt-3 flex-1 space-y-2.5">
             {isInitialInventoryLot ? (
-              <div className="py-6 px-3.5 text-center rounded-xl bg-slate-50 border-2 border-dashed border-slate-300 space-y-2.5 my-auto">
-                <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center mx-auto">
-                  <Layers className="w-4 h-4 text-slate-700" />
+              <div className="p-5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="w-5 h-5 text-slate-400" />
+                  <span className="font-semibold text-slate-700">Origen de Lote: Inventario Inicial</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="font-bold text-slate-800 text-xs uppercase tracking-wide">
-                    Origen de Lote: Inventario Inicial
-                  </p>
-                  <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
-                    Este lote fue cargado como saldo base del sistema, por lo que carece de trazabilidad de materia prima o guía forestal previa.
-                  </p>
+                <p className="text-sm text-slate-500">
+                  Este lote fue cargado como saldo base del sistema, por lo que carece de trazabilidad de materia prima o guía forestal previa.
+                </p>
+                <div className="mt-3">
+                  <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-700 rounded">
+                    No Aplica — Saldo Inicial
+                  </span>
                 </div>
-                <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-semibold">
-                  No Aplica — Saldo Inicial
-                </span>
               </div>
             ) : data.rawMaterialOrigin && data.rawMaterialOrigin.length > 0 ? (
               data.rawMaterialOrigin.map((wood, idx) => (
