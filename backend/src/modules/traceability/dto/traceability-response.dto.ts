@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class TraceabilityProductionItemDto {
+  @ApiProperty({ example: 'prod-uuid-1' })
+  productId: string;
+
+  @ApiProperty({ example: 'Polín 45x48' })
+  productName: string;
+
+  @ApiPropertyOptional({ example: '45x48' })
+  dimensions?: string | null;
+
+  @ApiProperty({ example: 98 })
+  quantityProduced: number;
+}
+
 export class TraceabilityProductionDto {
   @ApiProperty({ example: 'LT-020926-W36' })
   lot: string;
@@ -21,6 +35,12 @@ export class TraceabilityProductionDto {
 
   @ApiProperty({ example: 'Carlos Mendoza' })
   supervisor: string;
+
+  @ApiPropertyOptional({ type: [TraceabilityProductionItemDto] })
+  products?: TraceabilityProductionItemDto[];
+
+  @ApiPropertyOptional({ example: 1500 })
+  totalProduced?: number;
 }
 
 export class TraceabilityRawMaterialDto {
@@ -88,6 +108,19 @@ export class TraceabilityFumigationDto {
   quantityProduced?: number;
 }
 
+export class TraceabilityDispatchItemDto {
+  @ApiProperty({ example: 'prod-uuid-1' })
+  productId: string;
+
+  @ApiProperty({ example: 'Polín 45x48' })
+  productName: string;
+
+  @ApiPropertyOptional({ example: '45x48' })
+  dimensions?: string | null;
+
+  @ApiProperty({ example: 40 })
+  quantityDispatched: number;
+}
 
 export class TraceabilityDispatchDto {
   @ApiProperty({ example: 'F-1002' })
@@ -104,6 +137,29 @@ export class TraceabilityDispatchDto {
 
   @ApiPropertyOptional({ example: 'Marcos Rivera' })
   driverName?: string | null;
+
+  @ApiPropertyOptional({ type: [TraceabilityDispatchItemDto] })
+  details?: TraceabilityDispatchItemDto[];
+
+  @ApiPropertyOptional({ example: 1000 })
+  totalDispatched?: number;
+}
+
+export class TraceabilityReturnItemDto {
+  @ApiProperty({ example: 'prod-uuid-1' })
+  productId: string;
+
+  @ApiProperty({ example: 'Polín 45x48' })
+  productName: string;
+
+  @ApiPropertyOptional({ example: '45x48' })
+  dimensions?: string | null;
+
+  @ApiProperty({ example: 10 })
+  quantityReturned: number;
+
+  @ApiPropertyOptional({ example: 'REPROCESO', enum: ['REPROCESO', 'DESECHO'] })
+  destination?: string;
 }
 
 export class TraceabilityReturnDto {
@@ -127,6 +183,12 @@ export class TraceabilityReturnDto {
 
   @ApiProperty({ example: 'Ana Morales' })
   registeredBy: string;
+
+  @ApiPropertyOptional({ type: [TraceabilityReturnItemDto] })
+  details?: TraceabilityReturnItemDto[];
+
+  @ApiPropertyOptional({ example: 150 })
+  totalReturned?: number;
 }
 
 export class TraceabilityLotStatusDto {

@@ -12,6 +12,13 @@ export interface TraceabilityWoodOrigin {
   receiptDate: string;
 }
 
+export interface TraceabilityProductionProductItem {
+  productId?: string;
+  productName: string;
+  dimensions?: string | null;
+  quantityProduced: number;
+}
+
 export interface TraceabilityProduction {
   lot: string;
   product: string;
@@ -20,6 +27,8 @@ export interface TraceabilityProduction {
   isoWeek: number;
   quantityProduced: number;
   supervisor: string;
+  products?: TraceabilityProductionProductItem[];
+  totalProduced?: number;
 }
 
 export interface TraceabilityFumigationProductItem {
@@ -40,12 +49,29 @@ export interface TraceabilityFumigation {
   certificateUrl?: string;
 }
 
+export interface TraceabilityDispatchItem {
+  productId?: string;
+  productName: string;
+  dimensions?: string | null;
+  quantityDispatched: number;
+}
+
 export interface TraceabilityDispatch {
   invoiceNumber: string;
   clientCenter: string;
   dispatchDate: string;
   quantityDispatched: number;
   driverName?: string | null;
+  details?: TraceabilityDispatchItem[];
+  totalDispatched?: number;
+}
+
+export interface TraceabilityReturnItem {
+  productId?: string;
+  productName: string;
+  dimensions?: string | null;
+  quantityReturned: number;
+  destination?: 'REPROCESO' | 'DESECHO' | null;
 }
 
 export interface TraceabilityReturn {
@@ -56,6 +82,8 @@ export interface TraceabilityReturn {
   destination?: 'REPROCESO' | 'DESECHO' | null;
   reason: string;
   registeredBy: string;
+  details?: TraceabilityReturnItem[];
+  totalReturned?: number;
 }
 
 export interface TraceabilityLotStatus {

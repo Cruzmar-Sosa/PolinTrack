@@ -202,6 +202,7 @@ export class TraceabilityService {
         },
         dispatchDetails: {
           include: {
+            product: true,
             dispatchHeader: {
               include: {
                 clientCenter: true,
@@ -209,6 +210,7 @@ export class TraceabilityService {
             },
             returnDetails: {
               include: {
+                product: true,
                 returnHeader: {
                   include: {
                     registeredBy: { select: { fullName: true } },
@@ -239,6 +241,22 @@ export class TraceabilityService {
       isoWeek: dp.isoWeek,
       quantityProduced: totalProduced,
       supervisor: dp.createdBy.fullName,
+      products: dp.productionDetails && dp.productionDetails.length > 0
+        ? dp.productionDetails.map((pd: any) => ({
+            productId: pd.productId || pd.product?.id,
+            productName: pd.product?.name || 'Polín',
+            dimensions: pd.product?.dimensions ?? pd.dimensions ?? null,
+            quantityProduced: pd.quantityProduced,
+          }))
+        : [
+            {
+              productId: (dp as any).productId || 'default',
+              productName: productNames,
+              dimensions: productDimensions,
+              quantityProduced: totalProduced,
+            },
+          ],
+      totalProduced,
     };
 
     const rawMaterialOrigin: TraceabilityRawMaterialDto[] =
@@ -274,33 +292,71 @@ export class TraceabilityService {
     }
     const fumigations: TraceabilityFumigationDto[] = Array.from(fumigationsMap.values());
 
-    const dispatches: TraceabilityDispatchDto[] = dp.dispatchDetails.map((dd) => ({
-      invoiceNumber: dd.dispatchHeader.invoiceNumber,
-      clientCenter: dd.dispatchHeader.clientCenter.name,
-      dispatchDate: dd.dispatchHeader.dispatchDate.toISOString().split('T')[0],
-      quantityDispatched: dd.quantityDispatched,
-      driverName: dd.dispatchHeader.driverName,
-    }));
-
-    const returns: TraceabilityReturnDto[] = [];
+    const dispatchesMap = new Map<string, TraceabilityDispatchDto>();
     let totalDispatched = 0;
-    let totalReturned = 0;
 
     for (const dd of dp.dispatchDetails) {
       totalDispatched += dd.quantityDispatched;
+      const inv = dd.dispatchHeader.invoiceNumber;
+      if (!dispatchesMap.has(inv)) {
+        dispatchesMap.set(inv, {
+          invoiceNumber: inv,
+          clientCenter: dd.dispatchHeader.clientCenter.name,
+          dispatchDate: dd.dispatchHeader.dispatchDate.toISOString().split('T')[0],
+          quantityDispatched: 0,
+          driverName: dd.dispatchHeader.driverName,
+          details: [],
+          totalDispatched: 0,
+        });
+      }
+      const disp = dispatchesMap.get(inv)!;
+      disp.quantityDispatched += dd.quantityDispatched;
+      disp.totalDispatched = (disp.totalDispatched || 0) + dd.quantityDispatched;
+      disp.details!.push({
+        productId: dd.productId || (dd.product?.id ?? 'unknown'),
+        productName: dd.product?.name || 'Polín',
+        dimensions: dd.dimensions ?? dd.product?.dimensions ?? null,
+        quantityDispatched: dd.quantityDispatched,
+      });
+    }
+
+    const dispatches: TraceabilityDispatchDto[] = Array.from(dispatchesMap.values());
+
+    const returnsMap = new Map<string, TraceabilityReturnDto>();
+    let totalReturned = 0;
+
+    for (const dd of dp.dispatchDetails) {
       for (const rd of dd.returnDetails) {
         totalReturned += rd.quantityReturned;
-        returns.push({
-          invoiceNumber: dd.dispatchHeader.invoiceNumber,
-          clientCenter: dd.dispatchHeader.clientCenter?.name,
-          returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
+        const rh = rd.returnHeader;
+        const retHeaderId = rh.id;
+        if (!returnsMap.has(retHeaderId)) {
+          returnsMap.set(retHeaderId, {
+            invoiceNumber: dd.dispatchHeader.invoiceNumber,
+            clientCenter: dd.dispatchHeader.clientCenter?.name,
+            returnDate: rh.returnDate.toISOString().split('T')[0],
+            quantityReturned: 0,
+            destination: rd.destination,
+            reason: rh.reason,
+            registeredBy: rh.registeredBy.fullName,
+            details: [],
+            totalReturned: 0,
+          });
+        }
+        const ret = returnsMap.get(retHeaderId)!;
+        ret.quantityReturned += rd.quantityReturned;
+        ret.totalReturned = (ret.totalReturned || 0) + rd.quantityReturned;
+        ret.details!.push({
+          productId: rd.productId || (rd.product?.id ?? 'unknown'),
+          productName: rd.product?.name || dd.product?.name || 'Polín',
+          dimensions: rd.product?.dimensions ?? dd.dimensions ?? dd.product?.dimensions ?? null,
           quantityReturned: rd.quantityReturned,
           destination: rd.destination,
-          reason: rd.returnHeader.reason,
-          registeredBy: rd.returnHeader.registeredBy.fullName,
         });
       }
     }
+
+    const returns: TraceabilityReturnDto[] = Array.from(returnsMap.values());
 
     const currentlyDelivered = Math.max(0, totalDispatched - totalReturned);
     const availableInYard = Math.max(0, totalProduced - currentlyDelivered);
@@ -498,6 +554,7 @@ export class TraceabilityService {
                 },
                 dispatchDetails: {
                   include: {
+                    product: true,
                     dispatchHeader: {
                       include: {
                         clientCenter: true,
@@ -505,6 +562,7 @@ export class TraceabilityService {
                     },
                     returnDetails: {
                       include: {
+                        product: true,
                         returnHeader: {
                           include: {
                             registeredBy: { select: { fullName: true } },
@@ -544,8 +602,8 @@ export class TraceabilityService {
 
     let production: TraceabilityProductionDto | null = null;
     const fumigationsMap = new Map<string, TraceabilityFumigationDto>();
-    const dispatches: TraceabilityDispatchDto[] = [];
-    const returns: TraceabilityReturnDto[] = [];
+    const dispatchesMap = new Map<string, TraceabilityDispatchDto>();
+    const returnsMap = new Map<string, TraceabilityReturnDto>();
 
     let totalProduced = 0;
     let totalDispatched = 0;
@@ -582,6 +640,22 @@ export class TraceabilityService {
         isoWeek: firstDp.isoWeek,
         quantityProduced: firstSummary.totalProduced,
         supervisor: firstDp.createdBy.fullName,
+        products: firstDp.productionDetails && firstDp.productionDetails.length > 0
+          ? firstDp.productionDetails.map((pd: any) => ({
+              productId: pd.productId || pd.product?.id,
+              productName: pd.product?.name || 'Polín',
+              dimensions: pd.product?.dimensions ?? pd.dimensions ?? null,
+              quantityProduced: pd.quantityProduced,
+            }))
+          : [
+              {
+                productId: (firstDp as any).productId || 'default',
+                productName: firstSummary.productNames,
+                dimensions: firstSummary.productDimensions,
+                quantityProduced: firstSummary.totalProduced,
+              },
+            ],
+        totalProduced: firstSummary.totalProduced,
       };
 
       for (const pwr of wr.productionWoodReceipts) {
@@ -683,12 +757,26 @@ export class TraceabilityService {
 
         for (const dd of dp.dispatchDetails) {
           totalDispatched += dd.quantityDispatched;
-          dispatches.push({
-            invoiceNumber: dd.dispatchHeader.invoiceNumber,
-            clientCenter: dd.dispatchHeader.clientCenter.name,
-            dispatchDate: dd.dispatchHeader.dispatchDate.toISOString().split('T')[0],
+          const inv = dd.dispatchHeader.invoiceNumber;
+          if (!dispatchesMap.has(inv)) {
+            dispatchesMap.set(inv, {
+              invoiceNumber: inv,
+              clientCenter: dd.dispatchHeader.clientCenter.name,
+              dispatchDate: dd.dispatchHeader.dispatchDate.toISOString().split('T')[0],
+              quantityDispatched: 0,
+              driverName: dd.dispatchHeader.driverName,
+              details: [],
+              totalDispatched: 0,
+            });
+          }
+          const disp = dispatchesMap.get(inv)!;
+          disp.quantityDispatched += dd.quantityDispatched;
+          disp.totalDispatched = (disp.totalDispatched || 0) + dd.quantityDispatched;
+          disp.details!.push({
+            productId: dd.productId || (dd.product?.id ?? 'unknown'),
+            productName: dd.product?.name || 'Polín',
+            dimensions: dd.dimensions ?? dd.product?.dimensions ?? null,
             quantityDispatched: dd.quantityDispatched,
-            driverName: dd.dispatchHeader.driverName,
           });
 
           const dispNodeId = `disp-${dd.dispatchHeader.id}`;
@@ -702,6 +790,10 @@ export class TraceabilityService {
                 quantityDispatched: dd.quantityDispatched,
               },
             });
+          } else {
+            const existing = nodesMap.get(dispNodeId)!;
+            existing.data.quantityDispatched =
+              (existing.data.quantityDispatched || 0) + dd.quantityDispatched;
           }
           edgesMap.set(`e-${prodNodeId}-${dispNodeId}`, {
             id: `e-${prodNodeId}-${dispNodeId}`,
@@ -712,14 +804,30 @@ export class TraceabilityService {
 
           for (const rd of dd.returnDetails) {
             totalReturned += rd.quantityReturned;
-            returns.push({
-              invoiceNumber: dd.dispatchHeader.invoiceNumber,
-              clientCenter: dd.dispatchHeader.clientCenter?.name,
-              returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
+            const rh = rd.returnHeader;
+            const retHeaderId = rh.id;
+            if (!returnsMap.has(retHeaderId)) {
+              returnsMap.set(retHeaderId, {
+                invoiceNumber: dd.dispatchHeader.invoiceNumber,
+                clientCenter: dd.dispatchHeader.clientCenter?.name,
+                returnDate: rh.returnDate.toISOString().split('T')[0],
+                quantityReturned: 0,
+                destination: rd.destination,
+                reason: rh.reason,
+                registeredBy: rh.registeredBy.fullName,
+                details: [],
+                totalReturned: 0,
+              });
+            }
+            const ret = returnsMap.get(retHeaderId)!;
+            ret.quantityReturned += rd.quantityReturned;
+            ret.totalReturned = (ret.totalReturned || 0) + rd.quantityReturned;
+            ret.details!.push({
+              productId: rd.productId || (rd.product?.id ?? 'unknown'),
+              productName: rd.product?.name || dd.product?.name || 'Polín',
+              dimensions: rd.product?.dimensions ?? dd.dimensions ?? dd.product?.dimensions ?? null,
               quantityReturned: rd.quantityReturned,
               destination: rd.destination,
-              reason: rd.returnHeader.reason,
-              registeredBy: rd.returnHeader.registeredBy.fullName,
             });
 
             const retNodeId = `ret-${rd.returnHeader.id}`;
@@ -734,6 +842,10 @@ export class TraceabilityService {
                   reason: rd.returnHeader.reason,
                 },
               });
+            } else {
+              const existing = nodesMap.get(retNodeId)!;
+              existing.data.quantityReturned =
+                (existing.data.quantityReturned || 0) + rd.quantityReturned;
             }
             edgesMap.set(`e-${dispNodeId}-${retNodeId}`, {
               id: `e-${dispNodeId}-${retNodeId}`,
@@ -745,6 +857,9 @@ export class TraceabilityService {
         }
       }
     }
+
+    const dispatches: TraceabilityDispatchDto[] = Array.from(dispatchesMap.values());
+    const returns: TraceabilityReturnDto[] = Array.from(returnsMap.values());
 
     const currentlyDelivered = Math.max(0, totalDispatched - totalReturned);
     const availableInYard = Math.max(0, totalProduced - currentlyDelivered);
@@ -831,6 +946,7 @@ export class TraceabilityService {
             },
             returnDetails: {
               include: {
+                product: true,
                 returnHeader: {
                   include: {
                     registeredBy: { select: { fullName: true } },
@@ -860,10 +976,20 @@ export class TraceabilityService {
           0,
         ),
         driverName: dh.driverName,
+        details: dh.dispatchDetails.map((dd) => ({
+          productId: dd.productId || (dd.product?.id ?? 'unknown'),
+          productName: dd.product?.name || 'Polín',
+          dimensions: dd.dimensions ?? dd.product?.dimensions ?? null,
+          quantityDispatched: dd.quantityDispatched,
+        })),
+        totalDispatched: dh.dispatchDetails.reduce(
+          (sum, d) => sum + d.quantityDispatched,
+          0,
+        ),
       },
     ];
 
-    const returns: TraceabilityReturnDto[] = [];
+    const returnsMap = new Map<string, TraceabilityReturnDto>();
     const rawMaterialMap = new Map<string, TraceabilityRawMaterialDto>();
     const fumigationsMap = new Map<string, TraceabilityFumigationDto>();
 
@@ -893,14 +1019,30 @@ export class TraceabilityService {
 
       for (const rd of dd.returnDetails) {
         totalReturned += rd.quantityReturned;
-        returns.push({
-          invoiceNumber: dh.invoiceNumber,
-          clientCenter: dh.clientCenter?.name,
-          returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
+        const rh = rd.returnHeader;
+        const retHeaderId = rh.id;
+        if (!returnsMap.has(retHeaderId)) {
+          returnsMap.set(retHeaderId, {
+            invoiceNumber: dh.invoiceNumber,
+            clientCenter: dh.clientCenter?.name,
+            returnDate: rh.returnDate.toISOString().split('T')[0],
+            quantityReturned: 0,
+            destination: rd.destination,
+            reason: rh.reason,
+            registeredBy: rh.registeredBy.fullName,
+            details: [],
+            totalReturned: 0,
+          });
+        }
+        const ret = returnsMap.get(retHeaderId)!;
+        ret.quantityReturned += rd.quantityReturned;
+        ret.totalReturned = (ret.totalReturned || 0) + rd.quantityReturned;
+        ret.details!.push({
+          productId: rd.productId || (rd.product?.id ?? 'unknown'),
+          productName: rd.product?.name || dd.product?.name || 'Polín',
+          dimensions: rd.product?.dimensions ?? dd.dimensions ?? dd.product?.dimensions ?? null,
           quantityReturned: rd.quantityReturned,
           destination: rd.destination,
-          reason: rd.returnHeader.reason,
-          registeredBy: rd.returnHeader.registeredBy.fullName,
         });
 
         const retNodeId = `ret-${rd.returnHeader.id}`;
@@ -915,6 +1057,10 @@ export class TraceabilityService {
               reason: rd.returnHeader.reason,
             },
           });
+        } else {
+          const existing = nodesMap.get(retNodeId)!;
+          existing.data.quantityReturned =
+            (existing.data.quantityReturned || 0) + rd.quantityReturned;
         }
         edgesMap.set(`e-${dispNodeId}-${retNodeId}`, {
           id: `e-${dispNodeId}-${retNodeId}`,
@@ -939,6 +1085,22 @@ export class TraceabilityService {
             isoWeek: dp.isoWeek,
             quantityProduced: dpSummary.totalProduced,
             supervisor: dp.createdBy.fullName,
+            products: dp.productionDetails && dp.productionDetails.length > 0
+              ? dp.productionDetails.map((pd: any) => ({
+                  productId: pd.productId || pd.product?.id,
+                  productName: pd.product?.name || 'Polín',
+                  dimensions: pd.product?.dimensions ?? pd.dimensions ?? null,
+                  quantityProduced: pd.quantityProduced,
+                }))
+              : [
+                  {
+                    productId: (dp as any).productId || 'default',
+                    productName: dpSummary.productNames,
+                    dimensions: dpSummary.productDimensions,
+                    quantityProduced: dpSummary.totalProduced,
+                  },
+                ],
+            totalProduced: dpSummary.totalProduced,
           };
         }
 
@@ -1084,7 +1246,7 @@ export class TraceabilityService {
       rawMaterialOrigin: Array.from(rawMaterialMap.values()),
       fumigations: Array.from(fumigationsMap.values()),
       dispatches,
-      returns,
+      returns: Array.from(returnsMap.values()),
       currentLotStatus,
       graph: {
         nodes: Array.from(nodesMap.values()),

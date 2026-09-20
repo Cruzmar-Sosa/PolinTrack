@@ -155,20 +155,45 @@ export function TraceabilityTimelineStages({
                   </Badge>
                 </div>
 
-                <p className="font-semibold text-slate-800 text-xs leading-snug">
-                  {data.production.product}
-                </p>
-
-                <p className="text-[11px] font-mono text-slate-500">
-                  Dimensiones: {data.production.dimensions}
-                </p>
-
-                <div className="pt-1.5 border-t border-blue-200/60 flex justify-between items-center text-xs font-mono">
-                  <span className="text-slate-600">Producido:</span>
+                <div className="pt-1 flex justify-between items-center text-xs font-mono">
+                  <span className="text-slate-600 font-medium">Total fabricado:</span>
                   <span className="font-black text-blue-900 text-sm tabular-nums">
-                    {data.production.quantityProduced.toLocaleString()} pcs
+                    {(data.production.totalProduced ?? data.production.quantityProduced).toLocaleString()} pcs
                   </span>
                 </div>
+
+                {data.production.products && data.production.products.length > 0 ? (
+                  <div className="mt-2.5 pt-2.5 border-t border-blue-200/80 space-y-1.5">
+                    <span className="text-[11px] font-semibold tracking-wider text-slate-600 uppercase block">
+                      Desglose por Producto Fabricado:
+                    </span>
+                    {data.production.products.map((p, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/80 border border-blue-200/70 text-xs shadow-2xs"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                          <span className="font-semibold text-slate-800 truncate">{p.productName}</span>
+                          {p.dimensions && (
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">({p.dimensions})</span>
+                          )}
+                        </div>
+                        <span className="font-mono font-bold text-blue-950 tabular-nums shrink-0">
+                          {p.quantityProduced.toLocaleString()} pcs
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-semibold text-slate-800 text-xs leading-snug">
+                      {data.production.product}
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-500">
+                      Dimensiones: {data.production.dimensions}
+                    </p>
+                  </>
+                )}
 
                 <div className="text-[10px] text-slate-500 font-mono pt-1 space-y-0.5 border-t border-blue-100">
                   <p>Fecha: {formatDate(data.production.productionDate)}</p>
@@ -323,13 +348,34 @@ export function TraceabilityTimelineStages({
                       <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                     <span className="font-mono font-bold text-slate-900 tabular-nums">
-                      {disp.quantityDispatched.toLocaleString()} pcs
+                      {(disp.totalDispatched ?? disp.quantityDispatched).toLocaleString()} pcs
                     </span>
                   </div>
 
                   <p className="font-semibold text-slate-800 truncate text-[11px]" title={disp.clientCenter}>
                     {disp.clientCenter}
                   </p>
+
+                  {disp.details && disp.details.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-amber-200/60 space-y-1">
+                      <span className="text-[10px] font-semibold tracking-wider text-amber-900/80 uppercase block">
+                        Líneas Despachadas:
+                      </span>
+                      {disp.details.map((d, dIdx) => (
+                        <div key={dIdx} className="flex items-center justify-between text-xs py-0.5 px-2 bg-white/70 rounded border border-amber-200/50">
+                          <span className="text-slate-700 truncate pr-2">
+                            {d.productName}{' '}
+                            {d.dimensions && (
+                              <span className="text-[10px] text-slate-500 font-mono">({d.dimensions})</span>
+                            )}
+                          </span>
+                          <span className="font-mono font-semibold text-slate-900 tabular-nums shrink-0">
+                            {d.quantityDispatched.toLocaleString()} pcs
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {disp.driverName && (
                     <p className="text-[10px] text-slate-500 truncate">
@@ -399,11 +445,11 @@ export function TraceabilityTimelineStages({
                       </button>
                       {isScrap ? (
                         <span className="font-mono font-bold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 tabular-nums">
-                          {ret.quantityReturned} pcs
+                          {(ret.totalReturned ?? ret.quantityReturned).toLocaleString()} pcs
                         </span>
                       ) : (
                         <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 tabular-nums">
-                          +{ret.quantityReturned} pcs
+                          +{(ret.totalReturned ?? ret.quantityReturned).toLocaleString()} pcs
                         </span>
                       )}
                     </div>
@@ -428,6 +474,39 @@ export function TraceabilityTimelineStages({
                         <Building2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                         <span>{ret.clientCenter}</span>
                       </p>
+                    )}
+
+                    {ret.details && ret.details.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-200/60 space-y-1.5">
+                        <span className="text-[10px] font-semibold tracking-wider text-slate-600 uppercase block">
+                          Líneas Reclamadas:
+                        </span>
+                        {ret.details.map((rd, rIdx) => {
+                          const isItemScrap = rd.destination === 'DESECHO';
+                          return (
+                            <div
+                              key={rIdx}
+                              className="flex items-center justify-between px-2 py-1.5 rounded bg-white/80 border border-slate-200/70 text-xs shadow-2xs"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                <span className="font-medium text-slate-800 truncate">{rd.productName}</span>
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 ${
+                                    isItemScrap
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  }`}
+                                >
+                                  {isItemScrap ? 'Desecho' : 'Reproceso'}
+                                </span>
+                              </div>
+                              <span className="font-mono font-bold text-slate-900 tabular-nums shrink-0">
+                                {isItemScrap ? '' : '+'}{rd.quantityReturned.toLocaleString()} pcs
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
 
                     <p className="text-slate-700 text-[11px] leading-snug">
