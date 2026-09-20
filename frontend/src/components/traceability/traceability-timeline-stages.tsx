@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Truck,
   RotateCcw,
+  Trash2,
   Calendar,
   User,
   ArrowRight,
@@ -213,14 +214,32 @@ export function TraceabilityTimelineStages({
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-mono font-bold text-purple-900 block truncate" title={fum.certificateNumber}>
-                      {fum.certificateNumber}
+                      Certificado: {fum.certificateNumber}
                     </span>
                     <Badge variant="success" size="sm">
                       APROBADO
                     </Badge>
                   </div>
 
-                  {fum.treatedProducts && fum.treatedProducts.length > 0 && (
+                  {fum.items && fum.items.length > 0 ? (
+                    <div className="pt-1 border-t border-purple-100 space-y-1">
+                      <span className="text-[10px] font-semibold text-purple-900 block">
+                        Tratamiento Fitosanitario por Producto:
+                      </span>
+                      {fum.items.map((it, itIdx) => (
+                        <div
+                          key={itIdx}
+                          className="bg-white text-purple-900 border border-purple-200 px-2 py-1 rounded text-[11px] font-mono flex items-center justify-between"
+                        >
+                          <span className="font-sans font-medium text-slate-800">{it.productName}:</span>
+                          <span className="font-bold text-purple-900 tabular-nums">
+                            Tratadas: {it.quantityFumigated}
+                            {it.quantityProduced ? ` de ${it.quantityProduced}` : ''} piezas
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : fum.treatedProducts && fum.treatedProducts.length > 0 ? (
                     <div className="pt-1 border-t border-purple-100">
                       <span className="text-[10px] font-semibold text-purple-900 block mb-1">
                         Productos Certificados:
@@ -236,7 +255,7 @@ export function TraceabilityTimelineStages({
                         ))}
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   <p className="text-[10px] text-slate-500 font-mono">
                     Fecha: {formatDate(fum.fumigationDate)}
@@ -355,46 +374,76 @@ export function TraceabilityTimelineStages({
 
           <CardContent className="p-3.5 pt-3 flex-1 space-y-2.5">
             {data.returns && data.returns.length > 0 ? (
-              data.returns.map((ret, idx) => (
-                <div
-                  key={idx}
-                  className="p-2.5 rounded-lg bg-rose-50/40 border border-rose-200 text-xs space-y-1.5 transition-all hover:bg-rose-50 group"
-                >
-                  <div className="flex justify-between items-center">
-                    <button
-                      type="button"
-                      onClick={() => onDrillDown('INVOICE', ret.invoiceNumber)}
-                      className="font-mono font-bold text-rose-900 text-left hover:underline flex items-center gap-1"
-                      title="Ver Factura de Devolución"
-                    >
-                      <span>Fac. {ret.invoiceNumber}</span>
-                      <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 tabular-nums">
-                      +{ret.quantityReturned} pcs
-                    </span>
-                  </div>
+              data.returns.map((ret, idx) => {
+                const isScrap = ret.destination === 'DESECHO';
+                return (
+                  <div
+                    key={idx}
+                    className={`p-2.5 rounded-lg border text-xs space-y-1.5 transition-all group ${
+                      isScrap
+                        ? 'bg-rose-50/50 border-rose-200 hover:bg-rose-50'
+                        : 'bg-emerald-50/30 border-emerald-200 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={() => onDrillDown('INVOICE', ret.invoiceNumber)}
+                        className={`font-mono font-bold text-left hover:underline flex items-center gap-1 ${
+                          isScrap ? 'text-rose-900' : 'text-emerald-900'
+                        }`}
+                        title="Ver Factura de Devolución"
+                      >
+                        <span>Fac. {ret.invoiceNumber}</span>
+                        <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                      {isScrap ? (
+                        <span className="font-mono font-bold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 tabular-nums">
+                          {ret.quantityReturned} pcs
+                        </span>
+                      ) : (
+                        <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 tabular-nums">
+                          +{ret.quantityReturned} pcs
+                        </span>
+                      )}
+                    </div>
 
-                  {ret.clientCenter && (
-                    <p className="text-slate-800 text-[11px] font-semibold flex items-center gap-1">
-                      <Building2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                      <span>{ret.clientCenter}</span>
+                    <div className="flex items-center gap-1.5">
+                      {isScrap ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-200/80 text-rose-900">
+                          <Trash2 className="w-2.5 h-2.5" /> DESECHO
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-200/80 text-emerald-900">
+                          <RotateCcw className="w-2.5 h-2.5" /> REPROCESO
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-500">
+                        {isScrap ? 'No reingresa a existencias' : 'Suma a stock disponible'}
+                      </span>
+                    </div>
+
+                    {ret.clientCenter && (
+                      <p className="text-slate-800 text-[11px] font-semibold flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>{ret.clientCenter}</span>
+                      </p>
+                    )}
+
+                    <p className="text-slate-700 text-[11px] leading-snug">
+                      <strong>Motivo:</strong> {ret.reason}
                     </p>
-                  )}
 
-                  <p className="text-slate-700 text-[11px] leading-snug">
-                    <strong>Motivo:</strong> {ret.reason}
-                  </p>
+                    <p className="text-[10px] text-slate-500 font-mono">
+                      Retorno: {formatDate(ret.returnDate)}
+                    </p>
 
-                  <p className="text-[10px] text-slate-500 font-mono">
-                    Retorno: {formatDate(ret.returnDate)}
-                  </p>
-
-                  <p className="text-[10px] text-slate-400 truncate">
-                    Por: {ret.registeredBy}
-                  </p>
-                </div>
-              ))
+                    <p className="text-[10px] text-slate-400 truncate">
+                      Por: {ret.registeredBy}
+                    </p>
+                  </div>
+                );
+              })
             ) : (
               <div className="py-8 text-center text-xs text-slate-400 space-y-1.5">
                 <CheckCircle2 className="w-6 h-6 mx-auto text-emerald-500" />

@@ -17,16 +17,46 @@ export class ProductStockDto {
   producedQuantity: number;
 
   @ApiProperty({
+    description: 'Alias de total acumulado producido',
+    example: 10000,
+  })
+  totalProduced?: number;
+
+  @ApiProperty({
     description: 'Total acumulado despachado (salidas comerciales a clientes)',
     example: 8000,
   })
   dispatchedQuantity: number;
 
   @ApiProperty({
-    description: 'Total acumulado reincorporado por devoluciones comerciales',
+    description: 'Alias de total acumulado despachado',
+    example: 8000,
+  })
+  totalDispatched?: number;
+
+  @ApiProperty({
+    description: 'Total acumulado reincorporado a inventario por devoluciones de REPROCESO (RN-010-B)',
     example: 200,
   })
   returnedQuantity: number;
+
+  @ApiProperty({
+    description: 'Total acumulado de devoluciones con destino REPROCESO (suman a stock disponible)',
+    example: 200,
+  })
+  totalReturnedRework: number;
+
+  @ApiProperty({
+    description: 'Total acumulado de devoluciones con destino DESECHO (scrap, no suman a stock disponible)',
+    example: 50,
+  })
+  totalReturnedScrap: number;
+
+  @ApiProperty({
+    description: 'Total de devoluciones registradas (Reproceso + Desecho)',
+    example: 250,
+  })
+  totalReturned: number;
 
   @ApiProperty({
     description: 'Variación neta por ajustes de inventario autorizados (+ o -)',
@@ -35,7 +65,13 @@ export class ProductStockDto {
   adjustmentNetQuantity: number;
 
   @ApiProperty({
-    description: 'Stock físico disponible calculado dinámicamente según RN-010',
+    description: 'Alias de variación neta por ajustes',
+    example: -50,
+  })
+  netAdjustments?: number;
+
+  @ApiProperty({
+    description: 'Stock físico disponible calculado dinámicamente según RN-010-B: Producido - Despachado + Reproceso ± Ajustes',
     example: 2150,
   })
   availableStock: number;

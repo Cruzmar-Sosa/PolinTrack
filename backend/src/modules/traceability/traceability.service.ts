@@ -14,6 +14,7 @@ import {
   TraceabilityDispatchDto,
   TraceabilityEdgeDto,
   TraceabilityFumigationDto,
+  TraceabilityFumigationItemDto,
   TraceabilityLotStatusDto,
   TraceabilityNodeDto,
   TraceabilityProductionDto,
@@ -27,6 +28,57 @@ export class TraceabilityService {
   private readonly logger = new Logger(TraceabilityService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private mapFumigationItem(
+    f: any,
+    targetDailyProductionId?: string,
+    fallbackProductionDetails?: any[],
+  ): TraceabilityFumigationDto {
+    const details = f.details || [];
+    const relevantDetails = targetDailyProductionId
+      ? details.filter((d: any) => d.dailyProductionId === targetDailyProductionId)
+      : details;
+
+    const items: TraceabilityFumigationItemDto[] = relevantDetails.map((d: any) => {
+      const pName = d.product?.name || 'Polín';
+      const quantityFumigated = d.quantityFumigated || 0;
+      const quantityProduced =
+        d.productionDetail?.quantityProduced ??
+        fallbackProductionDetails?.find(
+          (pd: any) => pd.productId === d.productId || pd.product?.id === d.productId,
+        )?.quantityProduced;
+
+      return {
+        productName: pName,
+        quantityFumigated,
+        quantityProduced,
+      };
+    });
+
+    const treatedProducts = items.map((it) =>
+      it.quantityProduced !== undefined && it.quantityProduced > 0
+        ? `${it.productName} (${it.quantityFumigated}/${it.quantityProduced} pcs)`
+        : `${it.productName} (${it.quantityFumigated} pcs)`,
+    );
+
+    const totalFumigated = items.reduce((sum, it) => sum + it.quantityFumigated, 0);
+    const totalProduced = items.reduce((sum, it) => sum + (it.quantityProduced || 0), 0);
+
+    return {
+      certificateNumber: f.certificateNumber,
+      fumigationDate:
+        f.fumigationDate instanceof Date
+          ? f.fumigationDate.toISOString().split('T')[0]
+          : typeof f.fumigationDate === 'string'
+            ? f.fumigationDate.split('T')[0]
+            : String(f.fumigationDate),
+      certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
+      treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
+      items: items.length > 0 ? items : undefined,
+      quantityFumigated: totalFumigated > 0 ? totalFumigated : undefined,
+      quantityProduced: totalProduced > 0 ? totalProduced : undefined,
+    };
+  }
 
   private extractProductionSummary(dp: any) {
     const details =
@@ -131,7 +183,7 @@ export class TraceabilityService {
           orderBy: { fumigationDate: 'desc' },
           include: {
             details: {
-              include: { product: true },
+              include: { product: true, productionDetail: true },
             },
           },
         },
@@ -140,11 +192,12 @@ export class TraceabilityService {
             fumigation: {
               include: {
                 details: {
-                  include: { product: true },
+                  include: { product: true, productionDetail: true },
                 },
               },
             },
             product: true,
+            productionDetail: true,
           },
         },
         dispatchDetails: {
@@ -203,30 +256,20 @@ export class TraceabilityService {
 
     const fumigationsMap = new Map<string, TraceabilityFumigationDto>();
     for (const f of dp.fumigations) {
-      const treatedProducts = (f as any).details
-        ?.filter((d: any) => d.dailyProductionId === dp.id)
-        ?.map((d: any) => d.product?.name)
-        ?.filter(Boolean) || [];
-      fumigationsMap.set(f.id, {
-        certificateNumber: f.certificateNumber,
-        fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-        certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-        treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-      });
+      if (!fumigationsMap.has(f.id)) {
+        fumigationsMap.set(
+          f.id,
+          this.mapFumigationItem(f, dp.id, dp.productionDetails),
+        );
+      }
     }
     for (const fd of (dp as any).fumigationDetails || []) {
       const f = fd.fumigation;
       if (f && !fumigationsMap.has(f.id)) {
-        const treatedProducts = f.details
-          ?.filter((d: any) => d.dailyProductionId === dp.id)
-          ?.map((d: any) => d.product?.name)
-          ?.filter(Boolean) || [fd.product?.name].filter(Boolean);
-        fumigationsMap.set(f.id, {
-          certificateNumber: f.certificateNumber,
-          fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-          certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-          treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-        });
+        fumigationsMap.set(
+          f.id,
+          this.mapFumigationItem(f, dp.id, dp.productionDetails),
+        );
       }
     }
     const fumigations: TraceabilityFumigationDto[] = Array.from(fumigationsMap.values());
@@ -252,6 +295,7 @@ export class TraceabilityService {
           clientCenter: dd.dispatchHeader.clientCenter?.name,
           returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
           quantityReturned: rd.quantityReturned,
+          destination: rd.destination,
           reason: rd.returnHeader.reason,
           registeredBy: rd.returnHeader.registeredBy.fullName,
         });
@@ -315,6 +359,13 @@ export class TraceabilityService {
     // Nodos de fumigaciones
     for (const f of fumigations) {
       const fumNodeId = `fum-${f.certificateNumber}`;
+      const piecesText =
+        f.quantityProduced && f.quantityFumigated
+          ? `${f.quantityFumigated} de ${f.quantityProduced} pcs`
+          : f.quantityFumigated
+            ? `${f.quantityFumigated} pcs`
+            : undefined;
+
       nodesMap.set(fumNodeId, {
         id: fumNodeId,
         type: 'FUMIGATION',
@@ -323,6 +374,10 @@ export class TraceabilityService {
           fumigationDate: f.fumigationDate,
           certificateNumber: f.certificateNumber,
           treatedProducts: f.treatedProducts,
+          items: f.items,
+          quantityFumigated: f.quantityFumigated,
+          quantityProduced: f.quantityProduced,
+          treatedPiecesText: piecesText,
         },
       });
       const edgeId = `e-${prodNodeId}-${fumNodeId}`;
@@ -368,6 +423,7 @@ export class TraceabilityService {
             label: `Devolución ${rh.returnType}`,
             data: {
               quantityReturned: rd.quantityReturned,
+              destination: rd.destination,
               reason: rh.reason,
               returnDate: rh.returnDate.toISOString().split('T')[0],
             },
@@ -423,7 +479,7 @@ export class TraceabilityService {
                   orderBy: { fumigationDate: 'desc' },
                   include: {
                     details: {
-                      include: { product: true },
+                      include: { product: true, productionDetail: true },
                     },
                   },
                 },
@@ -432,11 +488,12 @@ export class TraceabilityService {
                     fumigation: {
                       include: {
                         details: {
-                          include: { product: true },
+                          include: { product: true, productionDetail: true },
                         },
                       },
                     },
                     product: true,
+                    productionDetail: true,
                   },
                 },
                 dispatchDetails: {
@@ -556,26 +613,28 @@ export class TraceabilityService {
         });
 
         for (const f of dp.fumigations) {
-          const treatedProducts = (f as any).details
-            ?.filter((d: any) => d.dailyProductionId === dp.id)
-            ?.map((d: any) => d.product?.name)
-            ?.filter(Boolean) || [];
           if (!fumigationsMap.has(f.id)) {
-            fumigationsMap.set(f.id, {
-              certificateNumber: f.certificateNumber,
-              fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-              certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-              treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-            });
+            const mappedFum = this.mapFumigationItem(f, dp.id, dp.productionDetails);
+            fumigationsMap.set(f.id, mappedFum);
             const fumNodeId = `fum-${f.certificateNumber}`;
+            const piecesText =
+              mappedFum.quantityProduced && mappedFum.quantityFumigated
+                ? `${mappedFum.quantityFumigated} de ${mappedFum.quantityProduced} pcs`
+                : mappedFum.quantityFumigated
+                  ? `${mappedFum.quantityFumigated} pcs`
+                  : undefined;
             nodesMap.set(fumNodeId, {
               id: fumNodeId,
               type: 'FUMIGATION',
               label: `Cert. ${f.certificateNumber}`,
               data: {
                 certificateNumber: f.certificateNumber,
-                fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-                treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
+                fumigationDate: mappedFum.fumigationDate,
+                treatedProducts: mappedFum.treatedProducts,
+                items: mappedFum.items,
+                quantityFumigated: mappedFum.quantityFumigated,
+                quantityProduced: mappedFum.quantityProduced,
+                treatedPiecesText: piecesText,
               },
             });
             edgesMap.set(`e-${prodNodeId}-${fumNodeId}`, {
@@ -590,25 +649,27 @@ export class TraceabilityService {
         for (const fd of (dp as any).fumigationDetails || []) {
           const f = fd.fumigation;
           if (f && !fumigationsMap.has(f.id)) {
-            const treatedProducts = f.details
-              ?.filter((d: any) => d.dailyProductionId === dp.id)
-              ?.map((d: any) => d.product?.name)
-              ?.filter(Boolean) || [fd.product?.name].filter(Boolean);
-            fumigationsMap.set(f.id, {
-              certificateNumber: f.certificateNumber,
-              fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-              certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-              treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-            });
+            const mappedFum = this.mapFumigationItem(f, dp.id, dp.productionDetails);
+            fumigationsMap.set(f.id, mappedFum);
             const fumNodeId = `fum-${f.certificateNumber}`;
+            const piecesText =
+              mappedFum.quantityProduced && mappedFum.quantityFumigated
+                ? `${mappedFum.quantityFumigated} de ${mappedFum.quantityProduced} pcs`
+                : mappedFum.quantityFumigated
+                  ? `${mappedFum.quantityFumigated} pcs`
+                  : undefined;
             nodesMap.set(fumNodeId, {
               id: fumNodeId,
               type: 'FUMIGATION',
               label: `Cert. ${f.certificateNumber}`,
               data: {
                 certificateNumber: f.certificateNumber,
-                fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-                treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
+                fumigationDate: mappedFum.fumigationDate,
+                treatedProducts: mappedFum.treatedProducts,
+                items: mappedFum.items,
+                quantityFumigated: mappedFum.quantityFumigated,
+                quantityProduced: mappedFum.quantityProduced,
+                treatedPiecesText: piecesText,
               },
             });
             edgesMap.set(`e-${prodNodeId}-${fumNodeId}`, {
@@ -656,6 +717,7 @@ export class TraceabilityService {
               clientCenter: dd.dispatchHeader.clientCenter?.name,
               returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
               quantityReturned: rd.quantityReturned,
+              destination: rd.destination,
               reason: rd.returnHeader.reason,
               registeredBy: rd.returnHeader.registeredBy.fullName,
             });
@@ -668,6 +730,7 @@ export class TraceabilityService {
                 label: `Devolución ${rd.returnHeader.returnType}`,
                 data: {
                   quantityReturned: rd.quantityReturned,
+                  destination: rd.destination,
                   reason: rd.returnHeader.reason,
                 },
               });
@@ -736,7 +799,7 @@ export class TraceabilityService {
                   orderBy: { fumigationDate: 'desc' },
                   include: {
                     details: {
-                      include: { product: true },
+                      include: { product: true, productionDetail: true },
                     },
                   },
                 },
@@ -745,11 +808,12 @@ export class TraceabilityService {
                     fumigation: {
                       include: {
                         details: {
-                          include: { product: true },
+                          include: { product: true, productionDetail: true },
                         },
                       },
                     },
                     product: true,
+                    productionDetail: true,
                   },
                 },
                 productionWoodReceipts: {
@@ -834,6 +898,7 @@ export class TraceabilityService {
           clientCenter: dh.clientCenter?.name,
           returnDate: rd.returnHeader.returnDate.toISOString().split('T')[0],
           quantityReturned: rd.quantityReturned,
+          destination: rd.destination,
           reason: rd.returnHeader.reason,
           registeredBy: rd.returnHeader.registeredBy.fullName,
         });
@@ -846,6 +911,7 @@ export class TraceabilityService {
             label: `Devolución ${rd.returnHeader.returnType}`,
             data: {
               quantityReturned: rd.quantityReturned,
+              destination: rd.destination,
               reason: rd.returnHeader.reason,
             },
           });
@@ -897,26 +963,28 @@ export class TraceabilityService {
 
         // Fumigaciones
         for (const f of dp.fumigations) {
-          const treatedProducts = (f as any).details
-            ?.filter((d: any) => d.dailyProductionId === dp.id)
-            ?.map((d: any) => d.product?.name)
-            ?.filter(Boolean) || [];
           if (!fumigationsMap.has(f.id)) {
-            fumigationsMap.set(f.id, {
-              certificateNumber: f.certificateNumber,
-              fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-              certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-              treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-            });
+            const mappedFum = this.mapFumigationItem(f, dp.id, dp.productionDetails);
+            fumigationsMap.set(f.id, mappedFum);
             const fumNodeId = `fum-${f.certificateNumber}`;
+            const piecesText =
+              mappedFum.quantityProduced && mappedFum.quantityFumigated
+                ? `${mappedFum.quantityFumigated} de ${mappedFum.quantityProduced} pcs`
+                : mappedFum.quantityFumigated
+                  ? `${mappedFum.quantityFumigated} pcs`
+                  : undefined;
             nodesMap.set(fumNodeId, {
               id: fumNodeId,
               type: 'FUMIGATION',
               label: `Cert. ${f.certificateNumber}`,
               data: {
                 certificateNumber: f.certificateNumber,
-                fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-                treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
+                fumigationDate: mappedFum.fumigationDate,
+                treatedProducts: mappedFum.treatedProducts,
+                items: mappedFum.items,
+                quantityFumigated: mappedFum.quantityFumigated,
+                quantityProduced: mappedFum.quantityProduced,
+                treatedPiecesText: piecesText,
               },
             });
             edgesMap.set(`e-${prodNodeId}-${fumNodeId}`, {
@@ -931,25 +999,27 @@ export class TraceabilityService {
         for (const fd of (dp as any).fumigationDetails || []) {
           const f = fd.fumigation;
           if (f && !fumigationsMap.has(f.id)) {
-            const treatedProducts = f.details
-              ?.filter((d: any) => d.dailyProductionId === dp.id)
-              ?.map((d: any) => d.product?.name)
-              ?.filter(Boolean) || [fd.product?.name].filter(Boolean);
-            fumigationsMap.set(f.id, {
-              certificateNumber: f.certificateNumber,
-              fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-              certificateDownloadUrl: `/api/v1/fumigations/${f.id}/certificate-url`,
-              treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
-            });
+            const mappedFum = this.mapFumigationItem(f, dp.id, dp.productionDetails);
+            fumigationsMap.set(f.id, mappedFum);
             const fumNodeId = `fum-${f.certificateNumber}`;
+            const piecesText =
+              mappedFum.quantityProduced && mappedFum.quantityFumigated
+                ? `${mappedFum.quantityFumigated} de ${mappedFum.quantityProduced} pcs`
+                : mappedFum.quantityFumigated
+                  ? `${mappedFum.quantityFumigated} pcs`
+                  : undefined;
             nodesMap.set(fumNodeId, {
               id: fumNodeId,
               type: 'FUMIGATION',
               label: `Cert. ${f.certificateNumber}`,
               data: {
                 certificateNumber: f.certificateNumber,
-                fumigationDate: f.fumigationDate.toISOString().split('T')[0],
-                treatedProducts: treatedProducts.length > 0 ? treatedProducts : undefined,
+                fumigationDate: mappedFum.fumigationDate,
+                treatedProducts: mappedFum.treatedProducts,
+                items: mappedFum.items,
+                quantityFumigated: mappedFum.quantityFumigated,
+                quantityProduced: mappedFum.quantityProduced,
+                treatedPiecesText: piecesText,
               },
             });
             edgesMap.set(`e-${prodNodeId}-${fumNodeId}`, {

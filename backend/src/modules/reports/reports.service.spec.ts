@@ -63,6 +63,12 @@ describe('ReportsService', () => {
           { productId: 'p-1', movementType: 'ADJUSTMENT', _sum: { deltaQuantity: 50 } },
         ]),
       },
+      returnDetail: {
+        groupBy: jest.fn().mockResolvedValue([
+          { productId: 'p-1', destination: 'REPROCESO', _sum: { quantityReturned: 150 } },
+          { productId: 'p-1', destination: 'DESECHO', _sum: { quantityReturned: 50 } },
+        ]),
+      },
       dailyProduction: {
         count: jest.fn().mockResolvedValue(1),
         findMany: jest.fn().mockResolvedValue([

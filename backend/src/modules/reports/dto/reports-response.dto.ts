@@ -106,6 +106,15 @@ export class DispatchReportItemDto {
   @ApiProperty({ example: 0 })
   quantityReturnedAccumulated: number;
 
+  @ApiPropertyOptional({ example: 'REPROCESO', enum: ['REPROCESO', 'DESECHO', 'MIXTO'] })
+  returnDestination?: string | null;
+
+  @ApiPropertyOptional({ example: 0 })
+  quantityReturnedRework?: number;
+
+  @ApiPropertyOptional({ example: 0 })
+  quantityReturnedScrap?: number;
+
   @ApiPropertyOptional({ example: 'M-12345' })
   vehicleInfo?: string | null;
 
@@ -152,6 +161,12 @@ export class InventoryReportItemDto {
   @ApiProperty({ example: 200 })
   totalReturned: number;
 
+  @ApiPropertyOptional({ example: 180 })
+  totalReturnedRework?: number;
+
+  @ApiPropertyOptional({ example: 20 })
+  totalReturnedScrap?: number;
+
   @ApiProperty({ example: 50 })
   netAdjustments: number;
 
@@ -171,6 +186,8 @@ export class InventoryReportResponseDto {
       totalProduced: 12000,
       totalDispatched: 8000,
       totalReturned: 500,
+      totalReturnedRework: 450,
+      totalReturnedScrap: 50,
       totalAvailableStock: 4500,
     },
   })
@@ -178,6 +195,8 @@ export class InventoryReportResponseDto {
     totalProduced: number;
     totalDispatched: number;
     totalReturned: number;
+    totalReturnedRework?: number;
+    totalReturnedScrap?: number;
     totalAvailableStock: number;
   };
 }
@@ -247,8 +266,11 @@ export class FumigationReportItemDto {
   @ApiPropertyOptional({ example: 2 })
   lotsCount?: number;
 
-  @ApiPropertyOptional({ example: ['Polín 45x48', 'Polín 45x47'], type: [String] })
+  @ApiPropertyOptional({ example: ['Polín 45x48 (20 pcs)', 'Polín 120x80 (100 pcs)'], type: [String] })
   treatedProducts?: string[];
+
+  @ApiPropertyOptional({ example: 120, description: 'Total de piezas tratadas amparadas en el certificado' })
+  totalQuantityFumigated?: number;
 
   @ApiProperty({ example: 'OIRSA-NIC-2026-9901' })
   certificateNumber: string;

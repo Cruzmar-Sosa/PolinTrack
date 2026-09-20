@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MovementType, Prisma } from '@prisma/client';
+import { MovementType, Prisma, ReturnDestination } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateMovementInput } from './dto/create-movement-input.dto';
 import { QueryKardexDto } from './dto/query-kardex.dto';
@@ -39,8 +39,8 @@ export class InventoryLedgerService {
       isAdjustmentDecrement,
     } = input;
 
-    // 1. Validation: Quantity must be a strictly positive integer
-    if (!Number.isInteger(quantity) || quantity <= 0) {
+    // 1. Validation: Quantity must be an integer (positive or zero for DESECHO returns)
+    if (!Number.isInteger(quantity) || quantity < 0 || (quantity === 0 && (movementType !== MovementType.RETURN || input.destination !== ReturnDestination.DESECHO))) {
       throw new BadRequestException({
         code: 'INVALID_QUANTITY',
         message: 'La cantidad del movimiento debe ser un número entero positivo mayor a cero',
@@ -71,7 +71,7 @@ export class InventoryLedgerService {
       });
     }
 
-    // 4. Calculate signed deltaQuantity according to movementType (RN-010, D-017)
+    // 4. Calculate signed deltaQuantity according to movementType (RN-010, D-017, RN-010-B)
     let deltaQuantity: number;
 
     switch (movementType) {
@@ -95,8 +95,14 @@ export class InventoryLedgerService {
       }
 
       case MovementType.RETURN:
-        // Customer return reincorporates finished product stock (+N, RN-013)
-        deltaQuantity = Math.abs(quantity);
+        // Customer return (RN-010-B, RN-013-B):
+        // REPROCESO: Reincorporates finished product stock (+N)
+        // DESECHO: Scrap / discarded pieces. Zero delta in operational stock (delta = 0)
+        if (input.destination === ReturnDestination.DESECHO) {
+          deltaQuantity = 0;
+        } else {
+          deltaQuantity = Math.abs(quantity);
+        }
         break;
 
       case MovementType.ADJUSTMENT: {
@@ -124,6 +130,9 @@ export class InventoryLedgerService {
     }
 
     // 5. Append-only insertion into inventory_movements
+    const destination = input.destination ?? (movementType === MovementType.RETURN ? ReturnDestination.REPROCESO : null);
+    const metadata = input.metadata ?? (input.destination === ReturnDestination.DESECHO ? { destination: 'DESECHO', discardedPieces: quantity } : undefined);
+
     const movement = await client.inventoryMovement.create({
       data: {
         productId,
@@ -132,11 +141,13 @@ export class InventoryLedgerService {
         referenceTable,
         referenceId,
         performedById,
+        destination,
+        metadata,
       },
     });
 
     this.logger.log(
-      `[Ledger] Movimiento registrado: ID=${movement.id}, Producto=${product.dimensions}, Tipo=${movementType}, Delta=${deltaQuantity}, Ref=${referenceTable}:${referenceId}`,
+      `[Ledger] Movimiento registrado: ID=${movement.id}, Producto=${product.dimensions}, Tipo=${movementType}, Delta=${deltaQuantity}, Destino=${destination ?? 'N/A'}, Ref=${referenceTable}:${referenceId}`,
     );
 
     return movement;
@@ -164,7 +175,7 @@ export class InventoryLedgerService {
 
   /**
    * Computes the consolidated stock balance breakdown for all catalog products (or a single one).
-   * Implements EP-INV-01 (RN-010, UC-INV-01).
+   * Implements EP-INV-01 (RN-010-B, UC-INV-01).
    *
    * @param productId Optional filter for a specific product
    */
@@ -174,15 +185,22 @@ export class InventoryLedgerService {
       orderBy: { dimensions: 'asc' },
     });
 
-    const groups = await this.prisma.inventoryMovement.groupBy({
-      by: ['productId', 'movementType'],
-      where: productId ? { productId } : undefined,
-      _sum: { deltaQuantity: true },
-    });
+    const [movementGroups, returnGroups] = await Promise.all([
+      this.prisma.inventoryMovement.groupBy({
+        by: ['productId', 'movementType'],
+        where: productId ? { productId } : undefined,
+        _sum: { deltaQuantity: true },
+      }),
+      this.prisma.returnDetail.groupBy({
+        by: ['productId', 'destination'],
+        where: productId ? { productId } : undefined,
+        _sum: { quantityReturned: true },
+      }),
+    ]);
 
     // Map aggregation groups by productId and movementType
     const movementMap = new Map<string, Map<MovementType, number>>();
-    for (const group of groups) {
+    for (const group of movementGroups) {
       if (!movementMap.has(group.productId)) {
         movementMap.set(group.productId, new Map<MovementType, number>());
       }
@@ -191,25 +209,50 @@ export class InventoryLedgerService {
         .set(group.movementType, group._sum.deltaQuantity ?? 0);
     }
 
+    // Map return groups by productId and destination
+    const returnBreakdownMap = new Map<string, { rework: number; scrap: number }>();
+    for (const rg of returnGroups) {
+      if (!returnBreakdownMap.has(rg.productId)) {
+        returnBreakdownMap.set(rg.productId, { rework: 0, scrap: 0 });
+      }
+      const item = returnBreakdownMap.get(rg.productId)!;
+      if (rg.destination === ReturnDestination.DESECHO) {
+        item.scrap += rg._sum.quantityReturned ?? 0;
+      } else {
+        item.rework += rg._sum.quantityReturned ?? 0;
+      }
+    }
+
     const result: ProductStockDto[] = products.map((prod) => {
       const prodMovements = movementMap.get(prod.id);
       const produced = prodMovements?.get(MovementType.PRODUCTION) ?? 0;
       const dispatchedRaw = prodMovements?.get(MovementType.DISPATCH) ?? 0;
       const dispatched = Math.abs(dispatchedRaw);
-      const returned = prodMovements?.get(MovementType.RETURN) ?? 0;
+      const returnedReworkLedger = prodMovements?.get(MovementType.RETURN) ?? 0;
       const adjustment = prodMovements?.get(MovementType.ADJUSTMENT) ?? 0;
 
-      // Available stock = sum of all signed deltas (RN-010)
-      const availableStock = produced - dispatched + returned + adjustment;
+      const returnBreakdown = returnBreakdownMap.get(prod.id) ?? { rework: 0, scrap: 0 };
+      const totalReturnedRework = returnBreakdown.rework || returnedReworkLedger;
+      const totalReturnedScrap = returnBreakdown.scrap;
+      const totalReturned = totalReturnedRework + totalReturnedScrap;
+
+      // Available stock = sum of all signed deltas: Produced - Dispatched + Reproceso ± Adjustments (RN-010-B)
+      const availableStock = produced - dispatched + returnedReworkLedger + adjustment;
 
       return {
         productId: prod.id,
         productName: prod.name,
         dimensions: prod.dimensions,
         producedQuantity: produced,
+        totalProduced: produced,
         dispatchedQuantity: dispatched,
-        returnedQuantity: returned,
+        totalDispatched: dispatched,
+        returnedQuantity: returnedReworkLedger,
+        totalReturnedRework,
+        totalReturnedScrap,
+        totalReturned,
         adjustmentNetQuantity: adjustment,
+        netAdjustments: adjustment,
         availableStock,
       };
     });

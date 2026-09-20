@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ReturnTypeEnum } from '@prisma/client';
+import { ReturnTypeEnum, ReturnDestination } from '@prisma/client';
 
 export class ReturnProductResponseDto {
   @ApiProperty({ example: 'p1b2c3d4-e5f6-7890-abcd-ef1234567890' })
@@ -92,6 +92,15 @@ export class ReturnDetailResponseDto {
 
   @ApiProperty({ example: 25 })
   quantityReturned: number;
+
+  @ApiProperty({ enum: ReturnDestination, example: ReturnDestination.REPROCESO })
+  destination: ReturnDestination;
+
+  @ApiPropertyOptional({ example: 'Piezas con curvatura excesiva' })
+  notes?: string | null;
+
+  @ApiPropertyOptional({ example: '2026-09-03T10:00:00.000Z' })
+  createdAt?: Date;
 
   @ApiPropertyOptional({ type: () => ReturnProductResponseDto })
   product?: ReturnProductResponseDto;

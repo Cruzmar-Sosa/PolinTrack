@@ -147,11 +147,12 @@ export class FumigationService {
       );
     }
 
-    // 3. Validación jerárquica de existencia y pertenencia de productos (RN-FUM-MULTI)
+    // 3. Validación jerárquica de existencia, pertenencia de productos y límites de cantidad (RN-FUM-QTY)
     const flatDetailsList: Array<{
       dailyProductionId: string;
       productId: string;
       productionDetailId: string | null;
+      quantityFumigated: number;
     }> = [];
 
     for (const lot of lotsToProcess) {
@@ -159,7 +160,10 @@ export class FumigationService {
         throw new BadRequestException('Cada lote en "lots" debe tener dailyProductionId');
       }
 
-      if (!lot.productIds || !Array.isArray(lot.productIds) || lot.productIds.length === 0) {
+      const hasProductsArray = lot.products && Array.isArray(lot.products) && lot.products.length > 0;
+      const hasProductIdsArray = lot.productIds && Array.isArray(lot.productIds) && lot.productIds.length > 0;
+
+      if (!hasProductsArray && !hasProductIdsArray) {
         throw new BadRequestException(
           `Debe seleccionar al menos un producto tratado para el lote "${lot.dailyProductionId}"`,
         );
@@ -181,29 +185,77 @@ export class FumigationService {
         );
       }
 
-      // Mapa de productos válidos en esta orden: productId -> productionDetailId | null
-      const validProductMap = new Map<string, string | null>();
+      // Mapa de productos válidos en esta orden: productId -> { id, quantityProduced, productName }
+      interface ProdMeta {
+        productionDetailId: string | null;
+        quantityProduced: number;
+        productName: string;
+      }
+      const validProductMap = new Map<string, ProdMeta>();
       if (dp.productionDetails && dp.productionDetails.length > 0) {
         for (const pd of dp.productionDetails) {
-          validProductMap.set(pd.productId, pd.id);
+          validProductMap.set(pd.productId, {
+            productionDetailId: pd.id,
+            quantityProduced: pd.quantityProduced,
+            productName: pd.product.name,
+          });
         }
       }
-      if (dp.productId) {
-        validProductMap.set(dp.productId, null);
+      if (dp.productId && !validProductMap.has(dp.productId)) {
+        validProductMap.set(dp.productId, {
+          productionDetailId: null,
+          quantityProduced: dp.quantityProduced || 0,
+          productName: dp.product?.name || 'Producto Principal',
+        });
       }
 
-      // Validar que cada producto seleccionado pertenezca estrictamente a la orden
-      for (const prodId of lot.productIds) {
-        if (!validProductMap.has(prodId)) {
+      // Normalizar lista de items con cantidades
+      const itemsToValidate: Array<{ productId: string; quantityFumigated: number }> = [];
+
+      if (hasProductsArray) {
+        for (const p of lot.products!) {
+          itemsToValidate.push({
+            productId: p.productId,
+            quantityFumigated: Number(p.quantityFumigated),
+          });
+        }
+      } else if (hasProductIdsArray) {
+        // Backwards compatibility: default quantity to quantityProduced
+        for (const pId of lot.productIds!) {
+          const meta = validProductMap.get(pId);
+          itemsToValidate.push({
+            productId: pId,
+            quantityFumigated: meta ? meta.quantityProduced : 1,
+          });
+        }
+      }
+
+      // Validar cada producto y su cantidad (RN-FUM-QTY)
+      for (const item of itemsToValidate) {
+        const prodMeta = validProductMap.get(item.productId);
+        if (!prodMeta) {
           throw new BadRequestException(
-            `El producto con ID "${prodId}" no pertenece a la orden de producción "${dp.productionLot}"`,
+            `El producto con ID "${item.productId}" no pertenece a la orden de producción "${dp.productionLot}"`,
+          );
+        }
+
+        if (!item.quantityFumigated || item.quantityFumigated <= 0 || !Number.isInteger(item.quantityFumigated)) {
+          throw new BadRequestException(
+            `La cantidad a fumigar debe ser un número entero mayor a 0 para el producto "${prodMeta.productName}" en el lote "${dp.productionLot}".`,
+          );
+        }
+
+        if (item.quantityFumigated > prodMeta.quantityProduced) {
+          throw new BadRequestException(
+            `La cantidad a fumigar (${item.quantityFumigated}) excede el total producido (${prodMeta.quantityProduced}) para el producto "${prodMeta.productName}" en el lote "${dp.productionLot}".`,
           );
         }
 
         flatDetailsList.push({
           dailyProductionId: lot.dailyProductionId,
-          productId: prodId,
-          productionDetailId: validProductMap.get(prodId) || null,
+          productId: item.productId,
+          productionDetailId: prodMeta.productionDetailId,
+          quantityFumigated: item.quantityFumigated,
         });
       }
     }
@@ -250,6 +302,7 @@ export class FumigationService {
               dailyProductionId: d.dailyProductionId,
               productId: d.productId,
               productionDetailId: d.productionDetailId,
+              quantityFumigated: d.quantityFumigated,
             })),
           },
         },
@@ -277,6 +330,12 @@ export class FumigationService {
                   id: true,
                   name: true,
                   dimensions: true,
+                },
+              },
+              productionDetail: {
+                select: {
+                  id: true,
+                  quantityProduced: true,
                 },
               },
             },
@@ -423,6 +482,12 @@ export class FumigationService {
                   dimensions: true,
                 },
               },
+              productionDetail: {
+                select: {
+                  id: true,
+                  quantityProduced: true,
+                },
+              },
             },
           },
           registeredBy: {
@@ -490,6 +555,12 @@ export class FumigationService {
                 id: true,
                 name: true,
                 dimensions: true,
+              },
+            },
+            productionDetail: {
+              select: {
+                id: true,
+                quantityProduced: true,
               },
             },
           },

@@ -151,6 +151,7 @@ export class ReportsService {
           dispatchHeader: {
             include: { clientCenter: true },
           },
+          returnDetails: true,
         },
         orderBy: [
           { dispatchHeader: { dispatchDate: 'desc' } },
@@ -162,22 +163,40 @@ export class ReportsService {
       }),
     ]);
 
-    const data = details.map((d) => ({
-      id: d.id,
-      dispatchDate: d.dispatchHeader.dispatchDate.toISOString().split('T')[0],
-      dispatchTime: d.dispatchHeader.dispatchTime.toISOString().split('T')[1].substring(0, 8),
-      invoiceNumber: d.dispatchHeader.invoiceNumber,
-      clientCenterName: d.dispatchHeader.clientCenter.name,
-      productionLot: d.dailyProduction?.productionLot ?? 'Sin lote',
-      productName: d.product.name,
-      dimensions: d.product.dimensions,
-      quantityDispatched: d.quantityDispatched,
-      quantityReturnedAccumulated: d.quantityReturnedAccumulated,
-      vehicleInfo: d.dispatchHeader.vehicleInfo,
-      driverName: d.dispatchHeader.driverName,
-      status: d.dispatchHeader.status,
-      observations: d.dispatchHeader.observations,
-    }));
+    const data = details.map((d) => {
+      const returnDetailsList = d.returnDetails || [];
+      const rework = returnDetailsList
+        .filter((r) => r.destination !== 'DESECHO')
+        .reduce((acc, r) => acc + r.quantityReturned, 0);
+      const scrap = returnDetailsList
+        .filter((r) => r.destination === 'DESECHO')
+        .reduce((acc, r) => acc + r.quantityReturned, 0);
+
+      let returnDestination: string | null = null;
+      if (rework > 0 && scrap > 0) returnDestination = 'MIXTO';
+      else if (rework > 0) returnDestination = 'REPROCESO';
+      else if (scrap > 0) returnDestination = 'DESECHO';
+
+      return {
+        id: d.id,
+        dispatchDate: d.dispatchHeader.dispatchDate.toISOString().split('T')[0],
+        dispatchTime: d.dispatchHeader.dispatchTime.toISOString().split('T')[1].substring(0, 8),
+        invoiceNumber: d.dispatchHeader.invoiceNumber,
+        clientCenterName: d.dispatchHeader.clientCenter.name,
+        productionLot: d.dailyProduction?.productionLot ?? 'Sin lote',
+        productName: d.product.name,
+        dimensions: d.product.dimensions,
+        quantityDispatched: d.quantityDispatched,
+        quantityReturnedAccumulated: d.quantityReturnedAccumulated,
+        returnDestination,
+        quantityReturnedRework: rework,
+        quantityReturnedScrap: scrap,
+        vehicleInfo: d.dispatchHeader.vehicleInfo,
+        driverName: d.dispatchHeader.driverName,
+        status: d.dispatchHeader.status,
+        observations: d.dispatchHeader.observations,
+      };
+    });
 
     return {
       success: true,
@@ -224,11 +243,31 @@ export class ReportsService {
       ...(timestampFilter ? { timestamp: timestampFilter } : {}),
     };
 
-    const movements = await this.prisma.inventoryMovement.groupBy({
-      by: ['productId', 'movementType'],
-      _sum: { deltaQuantity: true },
-      ...(Object.keys(movementsWhere).length > 0 ? { where: movementsWhere } : {}),
-    });
+    const [movements, returnGroups] = await Promise.all([
+      this.prisma.inventoryMovement.groupBy({
+        by: ['productId', 'movementType'],
+        _sum: { deltaQuantity: true },
+        ...(Object.keys(movementsWhere).length > 0 ? { where: movementsWhere } : {}),
+      }),
+      this.prisma.returnDetail.groupBy({
+        by: ['productId', 'destination'],
+        _sum: { quantityReturned: true },
+        ...(query.productId ? { where: { productId: query.productId } } : {}),
+      }),
+    ]);
+
+    const returnBreakdownMap = new Map<string, { rework: number; scrap: number }>();
+    for (const rg of returnGroups) {
+      if (!returnBreakdownMap.has(rg.productId)) {
+        returnBreakdownMap.set(rg.productId, { rework: 0, scrap: 0 });
+      }
+      const item = returnBreakdownMap.get(rg.productId)!;
+      if (rg.destination === 'DESECHO') {
+        item.scrap += rg._sum.quantityReturned ?? 0;
+      } else {
+        item.rework += rg._sum.quantityReturned ?? 0;
+      }
+    }
 
     // Mapeo de métricas por producto y tipo de movimiento
     const productStats = new Map<
@@ -268,6 +307,8 @@ export class ReportsService {
     let summaryProduced = 0;
     let summaryDispatched = 0;
     let summaryReturned = 0;
+    let summaryReturnedRework = 0;
+    let summaryReturnedScrap = 0;
     let summaryAvailable = 0;
 
     const data = products.map((p) => {
@@ -278,12 +319,19 @@ export class ReportsService {
         adjustments: 0,
       };
 
+      const returnBreakdown = returnBreakdownMap.get(p.id) ?? { rework: 0, scrap: 0 };
+      const totalReturnedRework = returnBreakdown.rework || stats.returned;
+      const totalReturnedScrap = returnBreakdown.scrap;
+      const totalReturned = totalReturnedRework + totalReturnedScrap;
+
       const currentAvailableStock =
         stats.produced - stats.dispatched + stats.returned + stats.adjustments;
 
       summaryProduced += stats.produced;
       summaryDispatched += stats.dispatched;
-      summaryReturned += stats.returned;
+      summaryReturned += totalReturned;
+      summaryReturnedRework += totalReturnedRework;
+      summaryReturnedScrap += totalReturnedScrap;
       summaryAvailable += currentAvailableStock;
 
       return {
@@ -292,7 +340,9 @@ export class ReportsService {
         dimensions: p.dimensions,
         totalProduced: stats.produced,
         totalDispatched: stats.dispatched,
-        totalReturned: stats.returned,
+        totalReturned,
+        totalReturnedRework,
+        totalReturnedScrap,
         netAdjustments: stats.adjustments,
         currentAvailableStock,
       };
@@ -305,6 +355,8 @@ export class ReportsService {
         totalProduced: summaryProduced,
         totalDispatched: summaryDispatched,
         totalReturned: summaryReturned,
+        totalReturnedRework: summaryReturnedRework,
+        totalReturnedScrap: summaryReturnedScrap,
         totalAvailableStock: summaryAvailable,
       },
     };
@@ -482,11 +534,14 @@ export class ReportsService {
       }
       const productionLots = Array.from(lotsSet);
 
-      const prodSet = new Set<string>();
-      for (const d of r.details || []) {
-        if (d.product?.name) prodSet.add(d.product.name);
-      }
-      const treatedProducts = Array.from(prodSet);
+      const treatedProducts = (r.details || []).map((d) => {
+        const pName = d.product?.name || 'Polín';
+        return d.quantityFumigated ? `${pName} (${d.quantityFumigated} pcs)` : pName;
+      });
+      const totalQuantityFumigated = (r.details || []).reduce(
+        (sum, d) => sum + (d.quantityFumigated || 0),
+        0,
+      );
 
       return {
         id: r.id,
@@ -496,6 +551,7 @@ export class ReportsService {
         productionLots,
         lotsCount: productionLots.length,
         treatedProducts,
+        totalQuantityFumigated,
         certificateNumber: r.certificateNumber,
         pdfFileName: r.pdfFileName,
         fileSizeBytes: r.fileSizeBytes,

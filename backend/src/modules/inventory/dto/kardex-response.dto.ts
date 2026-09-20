@@ -43,6 +43,17 @@ export class KardexMovementItemDto {
   @ApiProperty({ example: '2026-09-02T14:30:00.000Z' })
   timestamp: Date;
 
+  @ApiPropertyOptional({
+    description: 'Destino operativo para movimientos de devolución (REPROCESO o DESECHO)',
+    enum: ['REPROCESO', 'DESECHO'],
+  })
+  destination?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Metadatos contextuales del movimiento (ej: { destination: "DESECHO", discardedPieces: 5 })',
+  })
+  metadata?: Record<string, any> | null;
+
   @ApiProperty({
     example: {
       id: '8f02fd0b-a581-486d-8b05-6d1f641688f3',

@@ -34,6 +34,26 @@ export class IsNotFutureDateConstraint implements ValidatorConstraintInterface {
   }
 }
 
+export class FumigationProductItemDto {
+  @ApiProperty({
+    description: 'UUID del producto tratado',
+    example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+  })
+  @IsNotEmpty({ message: 'productId es obligatorio' })
+  @IsUUID('4', { message: 'productId debe ser un UUID v4 válido' })
+  productId: string;
+
+  @ApiProperty({
+    description: 'Cantidad exacta tratada de este producto (piezas)',
+    example: 20,
+    minimum: 1,
+  })
+  @IsNotEmpty({ message: 'quantityFumigated es obligatorio' })
+  @IsInt({ message: 'quantityFumigated debe ser un número entero' })
+  @Min(1, { message: 'quantityFumigated debe ser mayor o igual a 1' })
+  quantityFumigated: number;
+}
+
 export class FumigationLotDetailDto {
   @ApiProperty({
     description: 'UUID de la orden de producción diaria amparada por el certificado',
@@ -43,15 +63,25 @@ export class FumigationLotDetailDto {
   @IsUUID('4', { message: 'El dailyProductionId debe ser un UUID v4 válido' })
   dailyProductionId: string;
 
-  @ApiProperty({
-    description: 'Array de UUIDs de los productos tratados pertenecientes a esta orden',
+  @ApiPropertyOptional({
+    description: 'Array estructurado de productos y cantidades tratadas (RN-FUM-QTY)',
+    type: [FumigationProductItemDto],
+  })
+  @IsOptional()
+  @IsArray({ message: 'products debe ser un array' })
+  @ValidateNested({ each: true })
+  @Type(() => FumigationProductItemDto)
+  products?: FumigationProductItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Array de UUIDs de productos (compatibilidad hacia atrás)',
     example: ['b2c3d4e5-f6a7-8901-bcde-f12345678901'],
     type: [String],
   })
+  @IsOptional()
   @IsArray({ message: 'productIds debe ser un array de identificadores' })
-  @ArrayMinSize(1, { message: 'Debe seleccionar al menos un producto por lote' })
   @IsUUID('4', { each: true, message: 'Cada productId debe ser un UUID v4 válido' })
-  productIds: string[];
+  productIds?: string[];
 }
 
 export class CreateFumigationDto {

@@ -63,6 +63,7 @@ export function ReportsDispatchesTable({
                 <th className="py-2.5 px-3">Producto</th>
                 <th className="py-2.5 px-3">Dimensiones</th>
                 <th className="py-2.5 px-4 text-right">Piezas Despachadas</th>
+                <th className="py-2.5 px-4 text-right">Devoluciones</th>
                 <th className="py-2.5 px-3">Vehículo / Placa</th>
                 <th className="py-2.5 px-4">Conductor</th>
               </tr>
@@ -93,6 +94,28 @@ export function ReportsDispatchesTable({
                       {Number(item.quantityDispatched).toLocaleString('es-NI')}{' '}
                       <span className="text-[10px] text-slate-400 font-sans font-normal">pcs</span>
                     </td>
+                    <td className="py-2.5 px-4 font-mono text-right tabular-nums whitespace-nowrap">
+                      {item.quantityReturnedAccumulated > 0 ? (
+                        <div>
+                          <span className="font-bold text-amber-800">
+                            {Number(item.quantityReturnedAccumulated).toLocaleString('es-NI')}
+                          </span>{' '}
+                          <span className="text-[10px] text-slate-400 font-sans font-normal">pcs</span>
+                          {(item.quantityReturnedRework !== undefined || item.quantityReturnedScrap !== undefined) && (
+                            <div className="text-[10px] space-x-1 mt-0.5 font-medium">
+                              {(item.quantityReturnedRework ?? 0) > 0 && (
+                                <span className="text-emerald-700">+{item.quantityReturnedRework} rep</span>
+                              )}
+                              {(item.quantityReturnedScrap ?? 0) > 0 && (
+                                <span className="text-rose-600">{item.quantityReturnedScrap} des</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">0 pcs</span>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px] truncate max-w-[100px]" title={item.vehicleInfo || '-'}>
                       {item.vehicleInfo || '-'}
                     </td>
@@ -103,7 +126,7 @@ export function ReportsDispatchesTable({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400 italic">
+                  <td colSpan={10} className="py-12 text-center text-slate-400 italic">
                     No se encontraron despachos para los filtros seleccionados
                   </td>
                 </tr>

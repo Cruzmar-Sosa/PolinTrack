@@ -779,7 +779,7 @@ export default function DispatchesPage() {
                       </td>
                       <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
                         <div className="font-medium">{formatDate(d.dispatchDate)}</div>
-                        <div className="text-xs text-slate-400 font-mono">{formatTime(d.dispatchTime)}</div>
+                        <div className="text-xs text-slate-500 font-mono">{formatTime(d.dispatchTime ?? d.createdAt)}</div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-semibold text-slate-900">{d.clientCenter.name}</div>
@@ -895,7 +895,7 @@ export default function DispatchesPage() {
                 <div>
                   <span className="text-slate-400">Hora de Salida:</span>
                   <p className="font-mono font-semibold text-slate-800 mt-0.5">
-                    {formatTime(selectedDispatch.dispatchTime)}
+                    {formatTime(selectedDispatch.dispatchTime ?? selectedDispatch.createdAt)}
                   </p>
                 </div>
                 <div>

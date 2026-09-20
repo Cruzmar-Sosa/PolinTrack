@@ -22,12 +22,21 @@ export interface TraceabilityProduction {
   supervisor: string;
 }
 
+export interface TraceabilityFumigationProductItem {
+  productName: string;
+  quantityFumigated: number;
+  quantityProduced?: number;
+}
+
 export interface TraceabilityFumigation {
   id?: string;
   certificateNumber: string;
   fumigationDate: string;
   certificateDownloadUrl?: string;
   treatedProducts?: string[];
+  items?: TraceabilityFumigationProductItem[];
+  quantityFumigated?: number;
+  quantityProduced?: number;
   certificateUrl?: string;
 }
 
@@ -44,6 +53,7 @@ export interface TraceabilityReturn {
   clientCenter?: string;
   returnDate: string;
   quantityReturned: number;
+  destination?: 'REPROCESO' | 'DESECHO' | null;
   reason: string;
   registeredBy: string;
 }

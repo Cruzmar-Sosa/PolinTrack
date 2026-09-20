@@ -29,6 +29,7 @@ import {
   FileText,
   Boxes,
   ArrowDownLeft,
+  Trash2,
 } from 'lucide-react';
 import {
   formatDate,
@@ -43,6 +44,8 @@ interface ReturnDetailItem {
   id: string;
   dispatchDetailId: string;
   quantityReturned: number;
+  destination?: 'REPROCESO' | 'DESECHO';
+  notes?: string | null;
   productId?: string;
   product?: {
     id: string;
@@ -168,6 +171,10 @@ export default function ReturnsPage() {
 
   // Return quantities per line map: { [dispatchDetailId]: quantityToReturn }
   const [returnQuantities, setReturnQuantities] = useState<{ [detailId: string]: string }>({});
+  // Return destinations per line map: { [dispatchDetailId]: 'REPROCESO' | 'DESECHO' }
+  const [returnDestinations, setReturnDestinations] = useState<{ [detailId: string]: 'REPROCESO' | 'DESECHO' }>({});
+  // Return technical notes per line: { [detailId: string]: string }
+  const [returnNotes, setReturnNotes] = useState<{ [detailId: string]: string }>({});
 
   // Drawer / Detail Modal
   const [selectedReturn, setSelectedReturn] = useState<ReturnRecord | null>(null);
@@ -305,14 +312,20 @@ export default function ReturnsPage() {
     setFormReason('');
     setFormObservations('');
 
-    // Reset return quantities
+    // Reset return quantities, destinations and notes
     const initialQtyMap: { [key: string]: string } = {};
+    const initialDestMap: { [key: string]: 'REPROCESO' | 'DESECHO' } = {};
+    const initialNotesMap: { [key: string]: string } = {};
     if (initialDisp) {
       initialDisp.lines.forEach((line) => {
         initialQtyMap[line.id] = '';
+        initialDestMap[line.id] = 'REPROCESO';
+        initialNotesMap[line.id] = '';
       });
     }
     setReturnQuantities(initialQtyMap);
+    setReturnDestinations(initialDestMap);
+    setReturnNotes(initialNotesMap);
     setIsCreateModalOpen(true);
   };
 
@@ -321,12 +334,18 @@ export default function ReturnsPage() {
     setSelectedDispatchId(newDispatchId);
     const target = eligibleDispatches.find((d) => d.id === newDispatchId);
     const newQtyMap: { [key: string]: string } = {};
+    const newDestMap: { [key: string]: 'REPROCESO' | 'DESECHO' } = {};
+    const newNotesMap: { [key: string]: string } = {};
     if (target) {
       target.lines.forEach((line) => {
         newQtyMap[line.id] = '';
+        newDestMap[line.id] = 'REPROCESO';
+        newNotesMap[line.id] = '';
       });
     }
     setReturnQuantities(newQtyMap);
+    setReturnDestinations(newDestMap);
+    setReturnNotes(newNotesMap);
   };
 
   // Submit Create Return
@@ -366,8 +385,13 @@ export default function ReturnsPage() {
       return;
     }
 
-    // Parse detail quantities
-    const detailsPayload: Array<{ dispatchDetailId: string; quantityReturned: number }> = [];
+    // Parse detail quantities, destinations, and technical notes
+    const detailsPayload: Array<{
+      dispatchDetailId: string;
+      quantityReturned: number;
+      destination: 'REPROCESO' | 'DESECHO';
+      notes?: string;
+    }> = [];
 
     for (const line of activeDispatch.lines) {
       const qtyStr = returnQuantities[line.id];
@@ -387,6 +411,8 @@ export default function ReturnsPage() {
           detailsPayload.push({
             dispatchDetailId: line.id,
             quantityReturned: qty,
+            destination: returnDestinations[line.id] || 'REPROCESO',
+            notes: returnNotes[line.id]?.trim() || undefined,
           });
         }
       }
@@ -585,7 +611,7 @@ export default function ReturnsPage() {
                   <th className="py-3 px-4">Factura Original</th>
                   <th className="py-3 px-4">Fecha Devolución</th>
                   <th className="py-3 px-4">Planta Cliente</th>
-                  <th className="py-3 px-4">Tipo</th>
+                  <th className="py-3 px-4">Tipo / Destino</th>
                   <th className="py-3 px-4 text-right">Piezas Devueltas</th>
                   <th className="py-3 px-4">Motivo Principal</th>
                   <th className="py-3 px-4">Registrado Por</th>
@@ -598,6 +624,12 @@ export default function ReturnsPage() {
                     (sum, item) => sum + item.quantityReturned,
                     0,
                   );
+                  const reworkPieces = r.returnDetails
+                    .filter((item) => (item.destination || 'REPROCESO') === 'REPROCESO')
+                    .reduce((sum, item) => sum + item.quantityReturned, 0);
+                  const scrapPieces = r.returnDetails
+                    .filter((item) => item.destination === 'DESECHO')
+                    .reduce((sum, item) => sum + item.quantityReturned, 0);
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
@@ -625,21 +657,52 @@ export default function ReturnsPage() {
                         ) : null}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <span
-                          className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${
-                            r.returnType === 'TOTAL'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}
-                        >
-                          {r.returnType}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span
+                            className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded ${
+                              r.returnType === 'TOTAL'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            {r.returnType}
+                          </span>
+                          {scrapPieces === 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300">
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              REPROCESO
+                            </span>
+                          ) : reworkPieces === 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-300">
+                              <Trash2 className="w-2.5 h-2.5" />
+                              DESECHO
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300">
+                              MIXTO ({reworkPieces} Rep · {scrapPieces} Des)
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <span className="font-bold text-amber-700 text-base">
-                          +{totalReturnedPieces.toLocaleString('es-NI')}
-                        </span>{' '}
-                        <span className="text-xs font-medium text-slate-500">pcs</span>
+                        <div>
+                          <span className="font-bold text-slate-900 text-base">
+                            {totalReturnedPieces.toLocaleString('es-NI')}
+                          </span>{' '}
+                          <span className="text-xs font-medium text-slate-500">pcs</span>
+                        </div>
+                        <div className="text-[10px] space-x-1 mt-0.5">
+                          {reworkPieces > 0 && (
+                            <span className="text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                              +{reworkPieces} stock
+                            </span>
+                          )}
+                          {scrapPieces > 0 && (
+                            <span className="text-rose-700 font-semibold bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
+                              {scrapPieces} desecho
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-slate-700 max-w-xs truncate" title={r.reason}>
                         {r.reason}
@@ -762,6 +825,46 @@ export default function ReturnsPage() {
                   )}
                 </div>
 
+                {/* Balance e Impacto en Inventario */}
+                {(() => {
+                  const rework = (selectedReturn.returnDetails || [])
+                    .filter((d) => (d.destination || 'REPROCESO') === 'REPROCESO')
+                    .reduce((sum, d) => sum + d.quantityReturned, 0);
+                  const scrap = (selectedReturn.returnDetails || [])
+                    .filter((d) => d.destination === 'DESECHO')
+                    .reduce((sum, d) => sum + d.quantityReturned, 0);
+
+                  return (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                        <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                          <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                          A Reproceso (Stock)
+                        </span>
+                        <div className="text-xl font-bold font-mono text-emerald-700">
+                          +{rework.toLocaleString('es-NI')} <span className="text-xs font-normal">pcs</span>
+                        </div>
+                        <p className="text-[10px] text-emerald-600">
+                          Reincorporadas al inventario disponible.
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+                        <span className="text-[11px] font-bold text-rose-800 flex items-center gap-1">
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          A Desecho (0 Stock)
+                        </span>
+                        <div className="text-xl font-bold font-mono text-rose-700">
+                          {scrap.toLocaleString('es-NI')} <span className="text-xs font-normal">pcs</span>
+                        </div>
+                        <p className="text-[10px] text-rose-600">
+                          Madera descartada · Fuera de existencia.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Líneas Devueltas */}
                 <div className="space-y-3 pt-4 border-t border-slate-100">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -793,15 +896,26 @@ export default function ReturnsPage() {
                       return (
                         <div
                           key={det.id}
-                          className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5"
+                          className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2"
                         >
                           <div className="flex items-center justify-between font-semibold text-slate-900">
                             <span>
                               {prodName} {prodDimensions ? `(${prodDimensions})` : ''}
                             </span>
-                            <span className="font-bold text-amber-700 text-sm">
-                              +{det.quantityReturned} pcs
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {(det.destination || 'REPROCESO') === 'REPROCESO' ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <RotateCcw className="w-2.5 h-2.5" /> Reproceso
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200">
+                                  <Trash2 className="w-2.5 h-2.5" /> Desecho
+                                </span>
+                              )}
+                              <span className="font-bold text-amber-700 text-sm">
+                                +{det.quantityReturned} pcs
+                              </span>
+                            </div>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-500">
                             <span className="flex items-center gap-1">
@@ -814,6 +928,11 @@ export default function ReturnsPage() {
                               Despachadas en origen: <strong className="text-slate-700">{qtyDispatched} pcs</strong>
                             </span>
                           </div>
+                          {det.notes && (
+                            <div className="text-[11px] text-slate-600 bg-white p-2 rounded border border-slate-200/80">
+                              <span className="font-semibold text-slate-700">Nota técnica:</span> {det.notes}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -969,29 +1088,159 @@ export default function ReturnsPage() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
-                          Cantidad a devolver ahora (máx. {line.availableToReturn}):
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max={line.availableToReturn}
-                          step="1"
-                          placeholder="0"
-                          disabled={line.availableToReturn <= 0}
-                          value={returnQuantities[line.id] || ''}
-                          onChange={(e) =>
-                            setReturnQuantities((prev) => ({
-                              ...prev,
-                              [line.id]: e.target.value,
-                            }))
-                          }
-                          className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono min-h-[38px]"
-                        />
+                      <div className="space-y-3">
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                            Cantidad a devolver ahora (máx. {line.availableToReturn}):
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={line.availableToReturn}
+                            step="1"
+                            placeholder="0"
+                            disabled={line.availableToReturn <= 0}
+                            value={returnQuantities[line.id] || ''}
+                            onChange={(e) =>
+                              setReturnQuantities((prev) => ({
+                                ...prev,
+                                [line.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono min-h-[38px]"
+                          />
+                        </div>
+
+                        {/* Selector de Destino Operativo (RN-010-B) */}
+                        <div className="pt-2 border-t border-slate-200/80">
+                          <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                            Destino Operativo de las Piezas Devueltas:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setReturnDestinations((prev) => ({
+                                  ...prev,
+                                  [line.id]: 'REPROCESO',
+                                }))
+                              }
+                              className={`p-2.5 rounded-lg border text-left transition flex items-start gap-2 cursor-pointer ${
+                                (returnDestinations[line.id] || 'REPROCESO') === 'REPROCESO'
+                                  ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500 shadow-sm'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <RotateCcw className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div className="text-[11px]">
+                                <span className="font-bold block">♻ Reproceso (+Stock)</span>
+                                <span className="text-[10px] text-emerald-700 opacity-90 block">
+                                  Reingresa al stock físico disponible en planta para acondicionamiento.
+                                </span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setReturnDestinations((prev) => ({
+                                  ...prev,
+                                  [line.id]: 'DESECHO',
+                                }))
+                              }
+                              className={`p-2.5 rounded-lg border text-left transition flex items-start gap-2 cursor-pointer ${
+                                returnDestinations[line.id] === 'DESECHO'
+                                  ? 'bg-rose-50 border-rose-500 text-rose-900 ring-1 ring-rose-500 shadow-sm'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <Trash2 className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                              <div className="text-[11px]">
+                                <span className="font-bold block">🗑 Desecho (0 Stock)</span>
+                                <span className="text-[10px] text-rose-700 opacity-90 block">
+                                  Madera descartada/inservible. No suma al inventario disponible.
+                                </span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Nota técnica por línea */}
+                        <div>
+                          <label className="mb-1 block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                            Nota Técnica o Condición de la Madera (Opcional):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ej. Madera rajada en extremos, moho superficial..."
+                            value={returnNotes[line.id] || ''}
+                            onChange={(e) =>
+                              setReturnNotes((prev) => ({
+                                ...prev,
+                                [line.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
                   ))}
+
+                  {/* Resumen Dinámico de Impacto en Stock */}
+                  {(() => {
+                    let totalPcs = 0;
+                    let reworkPcs = 0;
+                    let scrapPcs = 0;
+                    for (const line of activeDispatch.lines) {
+                      const qty = parseInt(returnQuantities[line.id] || '0', 10);
+                      if (!isNaN(qty) && qty > 0) {
+                        totalPcs += qty;
+                        const dest = returnDestinations[line.id] || 'REPROCESO';
+                        if (dest === 'REPROCESO') {
+                          reworkPcs += qty;
+                        } else {
+                          scrapPcs += qty;
+                        }
+                      }
+                    }
+
+                    if (totalPcs === 0) return null;
+
+                    return (
+                      <div className="p-3.5 bg-slate-900 text-white rounded-xl border border-slate-800 space-y-2 text-xs">
+                        <div className="flex items-center justify-between font-semibold border-b border-slate-800 pb-2">
+                          <span className="flex items-center gap-1.5 text-amber-400">
+                            <Info className="w-4 h-4" />
+                            Balance Operativo Estimado
+                          </span>
+                          <span className="font-mono text-sm font-bold text-white">
+                            Total: {totalPcs.toLocaleString('es-NI')} pcs
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-[11px] pt-1">
+                          <div className="bg-emerald-950/60 border border-emerald-800/80 p-2 rounded-lg">
+                            <span className="text-emerald-400 font-bold block">♻ A Reproceso:</span>
+                            <span className="text-base font-mono font-bold text-emerald-300">
+                              +{reworkPcs.toLocaleString('es-NI')} pcs
+                            </span>
+                            <span className="text-[10px] text-emerald-400/80 block mt-0.5">
+                              Suma al stock disponible para nuevos despachos
+                            </span>
+                          </div>
+                          <div className="bg-rose-950/60 border border-rose-800/80 p-2 rounded-lg">
+                            <span className="text-rose-400 font-bold block">🗑 A Desecho:</span>
+                            <span className="text-base font-mono font-bold text-rose-300">
+                              {scrapPcs.toLocaleString('es-NI')} pcs
+                            </span>
+                            <span className="text-[10px] text-rose-400/80 block mt-0.5">
+                              Excluida de existencias operativas (+0 disponible)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

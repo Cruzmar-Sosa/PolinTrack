@@ -3,7 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ReturnsService } from './returns.service';
 import { PrismaService } from '../../database/prisma.service';
 import { InventoryLedgerService } from '../inventory/inventory-ledger.service';
-import { DispatchStatus, MovementType, ReturnTypeEnum } from '@prisma/client';
+import { DispatchStatus, MovementType, ReturnTypeEnum, ReturnDestination } from '@prisma/client';
 
 describe('ReturnsService', () => {
   let service: ReturnsService;
@@ -334,9 +334,11 @@ describe('ReturnsService', () => {
           productId: 'prod-uuid-1',
           movementType: MovementType.RETURN,
           quantity: 30,
+          destination: ReturnDestination.REPROCESO,
           referenceTable: 'return_details',
           referenceId: 'ret-det-1',
           performedById: mockUser.id,
+          metadata: undefined,
         },
         prisma,
       );
@@ -410,6 +412,153 @@ describe('ReturnsService', () => {
           status: DispatchStatus.RETURNED_TOTAL,
         },
       });
+    });
+
+    it('debe registrar devolución a DESECHO con destination: DESECHO y metadatos sin alterar stock operativo', async () => {
+      prisma.dispatchHeader.findUnique.mockResolvedValue(mockDispatchHeader);
+      prisma.dispatchDetail.findMany.mockResolvedValue([
+        {
+          id: 'det-uuid-1',
+          dispatchHeaderId: 'disp-uuid-1',
+          productId: 'prod-uuid-1',
+          quantityDispatched: 100,
+          quantityReturnedAccumulated: 0,
+          product: mockProduct,
+        },
+      ]);
+
+      const desechoDto = {
+        ...validDto,
+        details: [
+          {
+            dispatchDetailId: 'det-uuid-1',
+            quantityReturned: 15,
+            destination: ReturnDestination.DESECHO,
+            notes: 'Madera quebrada en transporte, descarte total',
+          },
+        ],
+      };
+
+      prisma.returnHeader.create.mockResolvedValue({
+        id: 'ret-uuid-desecho',
+        returnType: ReturnTypeEnum.PARCIAL,
+      });
+      prisma.returnDetail.create.mockResolvedValue({ id: 'ret-det-desecho' });
+      prisma.auditLog.create.mockResolvedValue({ id: 'audit-desecho' });
+
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        success: true,
+        data: { id: 'ret-uuid-desecho' } as any,
+      });
+
+      await service.create(desechoDto, mockUser);
+
+      // Verificación de que se crea ReturnDetail con destination DESECHO y notas
+      expect(prisma.returnDetail.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          destination: ReturnDestination.DESECHO,
+          notes: 'Madera quebrada en transporte, descarte total',
+          quantityReturned: 15,
+        }),
+      });
+
+      // Verificación de que se pasa destination y metadata al ledger
+      expect(ledgerService.recordMovement).toHaveBeenCalledWith(
+        {
+          productId: 'prod-uuid-1',
+          movementType: MovementType.RETURN,
+          quantity: 15,
+          destination: ReturnDestination.DESECHO,
+          referenceTable: 'return_details',
+          referenceId: 'ret-det-desecho',
+          performedById: mockUser.id,
+          metadata: {
+            destination: 'DESECHO',
+            discardedPieces: 15,
+            notes: 'Madera quebrada en transporte, descarte total',
+          },
+        },
+        prisma,
+      );
+    });
+
+    it('debe registrar devolución mixta (línea a Reproceso y línea a Desecho) asociando correctamente los destinos', async () => {
+      const mockMultiDetailDispatch = {
+        ...mockDispatchHeader,
+        dispatchDetails: [
+          {
+            id: 'det-uuid-1',
+            dispatchHeaderId: 'disp-uuid-1',
+            productId: 'prod-uuid-1',
+            quantityDispatched: 50,
+            quantityReturnedAccumulated: 0,
+            product: mockProduct,
+          },
+          {
+            id: 'det-uuid-2',
+            dispatchHeaderId: 'disp-uuid-1',
+            productId: 'prod-uuid-2',
+            quantityDispatched: 50,
+            quantityReturnedAccumulated: 0,
+            product: { id: 'prod-uuid-2', name: 'Polín 4x4', dimensions: '4x4' },
+          },
+        ],
+      };
+
+      prisma.dispatchHeader.findUnique.mockResolvedValue(mockMultiDetailDispatch);
+      prisma.dispatchDetail.findMany.mockResolvedValue(mockMultiDetailDispatch.dispatchDetails);
+
+      const mixedDto = {
+        ...validDto,
+        details: [
+          {
+            dispatchDetailId: 'det-uuid-1',
+            quantityReturned: 10,
+            destination: ReturnDestination.REPROCESO,
+            notes: 'Para cepillado',
+          },
+          {
+            dispatchDetailId: 'det-uuid-2',
+            quantityReturned: 5,
+            destination: ReturnDestination.DESECHO,
+            notes: 'Pudrición interna',
+          },
+        ],
+      };
+
+      prisma.returnHeader.create.mockResolvedValue({ id: 'ret-uuid-mixed' });
+      prisma.returnDetail.create
+        .mockResolvedValueOnce({ id: 'ret-det-mixed-1' })
+        .mockResolvedValueOnce({ id: 'ret-det-mixed-2' });
+      prisma.auditLog.create.mockResolvedValue({ id: 'audit-mixed' });
+
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        success: true,
+        data: { id: 'ret-uuid-mixed' } as any,
+      });
+
+      await service.create(mixedDto, mockUser);
+
+      expect(prisma.returnDetail.create).toHaveBeenCalledTimes(2);
+      expect(ledgerService.recordMovement).toHaveBeenCalledTimes(2);
+
+      expect(ledgerService.recordMovement).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          destination: ReturnDestination.REPROCESO,
+          quantity: 10,
+        }),
+        prisma,
+      );
+
+      expect(ledgerService.recordMovement).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          destination: ReturnDestination.DESECHO,
+          quantity: 5,
+        }),
+        prisma,
+      );
     });
   });
 

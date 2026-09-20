@@ -52,6 +52,17 @@ export class TraceabilityRawMaterialDto {
   receiptDate: string;
 }
 
+export class TraceabilityFumigationItemDto {
+  @ApiProperty({ example: 'Polín 45x48' })
+  productName: string;
+
+  @ApiProperty({ example: 20 })
+  quantityFumigated: number;
+
+  @ApiPropertyOptional({ example: 40 })
+  quantityProduced?: number;
+}
+
 export class TraceabilityFumigationDto {
   @ApiProperty({ example: 'OIRSA-NIC-2026-9901' })
   certificateNumber: string;
@@ -64,9 +75,19 @@ export class TraceabilityFumigationDto {
   })
   certificateDownloadUrl: string;
 
-  @ApiPropertyOptional({ example: ['Polín 45x48'], type: [String] })
+  @ApiPropertyOptional({ example: ['Polín 45x48 (20/40 pcs)'], type: [String] })
   treatedProducts?: string[];
+
+  @ApiPropertyOptional({ type: [TraceabilityFumigationItemDto] })
+  items?: TraceabilityFumigationItemDto[];
+
+  @ApiPropertyOptional({ example: 20 })
+  quantityFumigated?: number;
+
+  @ApiPropertyOptional({ example: 40 })
+  quantityProduced?: number;
 }
+
 
 export class TraceabilityDispatchDto {
   @ApiProperty({ example: 'F-1002' })
@@ -97,6 +118,9 @@ export class TraceabilityReturnDto {
 
   @ApiProperty({ example: 150 })
   quantityReturned: number;
+
+  @ApiPropertyOptional({ example: 'REPROCESO', enum: ['REPROCESO', 'DESECHO'] })
+  destination?: string;
 
   @ApiProperty({ example: 'Rechazo de calidad en Planta 2' })
   reason: string;

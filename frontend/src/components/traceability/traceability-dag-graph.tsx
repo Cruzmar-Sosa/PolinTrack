@@ -356,8 +356,10 @@ export function TraceabilityDagGraph({
                               </p>
                             )}
                             {node.data.quantityReturned !== undefined && (
-                              <p className="font-mono text-[10px] text-emerald-800 font-semibold tabular-nums">
-                                Retorno: +{node.data.quantityReturned} pcs
+                              <p className={`font-mono text-[10px] font-semibold tabular-nums ${
+                                node.data.destination === 'DESECHO' ? 'text-rose-800' : 'text-emerald-800'
+                              }`}>
+                                Retorno: {node.data.destination === 'DESECHO' ? `${node.data.quantityReturned} pcs (Desecho)` : `+${node.data.quantityReturned} pcs (Reproceso)`}
                               </p>
                             )}
                             {node.data.reason && (
@@ -369,6 +371,23 @@ export function TraceabilityDagGraph({
                               <p className="text-[10px] text-purple-700 font-mono">
                                 {formatDate(node.data.fumigationDate)}
                               </p>
+                            )}
+                            {node.data.treatedPiecesText && (
+                              <p className="font-mono text-[10px] text-purple-900 font-bold tabular-nums">
+                                Tratadas: {node.data.treatedPiecesText}
+                              </p>
+                            )}
+                            {node.data.treatedProducts && Array.isArray(node.data.treatedProducts) && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {node.data.treatedProducts.map((p: string, pIdx: number) => (
+                                  <span
+                                    key={pIdx}
+                                    className="bg-white text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded text-[9px] font-mono"
+                                  >
+                                    {p}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
                         )}
@@ -518,6 +537,17 @@ export function TraceabilityDagGraph({
                   <Badge variant="default" size="sm">
                     {selectedNode.type}
                   </Badge>
+                  {selectedNode.type === 'RETURN' && selectedNode.data?.destination && (
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        selectedNode.data.destination === 'DESECHO'
+                          ? 'bg-rose-100 text-rose-800 border-rose-300'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}
+                    >
+                      {selectedNode.data.destination === 'DESECHO' ? '🗑 DESECHO (0 Stock)' : '♻ REPROCESO (+Stock)'}
+                    </span>
+                  )}
                 </div>
                 <h5 className="font-mono font-black text-sm text-slate-900 mt-0.5">
                   {selectedNode.label}

@@ -46,17 +46,32 @@ interface FumigationDetailItem {
   dailyProductionId: string;
   productId: string;
   productionDetailId?: string | null;
+  quantityFumigated: number;
   createdAt: string;
   dailyProduction?: {
     id: string;
     productionLot: string;
     productionDate: string;
     isoWeek: number;
+    productionDetails?: Array<{
+      id: string;
+      productId?: string;
+      quantityProduced?: number;
+      product?: {
+        id?: string;
+        name: string;
+        dimensions: string;
+      };
+    }>;
   };
   product?: {
     id: string;
     name: string;
     dimensions: string;
+  };
+  productionDetail?: {
+    id: string;
+    quantityProduced: number;
   };
 }
 
@@ -128,18 +143,22 @@ interface ProductionLotOption {
   }>;
 }
 
+interface SelectedLotProductState {
+  id: string;
+  name: string;
+  dimensions: string;
+  quantityProduced: number;
+  quantityFumigated: number | '';
+  isSelected: boolean;
+  error?: string | null;
+}
+
 interface SelectedLotState {
   dailyProductionId: string;
   productionLot: string;
   productionDate: string;
   isoWeek?: number;
-  products: Array<{
-    id: string;
-    name: string;
-    dimensions: string;
-    quantityProduced?: number;
-    isSelected: boolean;
-  }>;
+  products: SelectedLotProductState[];
 }
 
 export default function FumigationPage() {
@@ -302,7 +321,7 @@ export default function FumigationPage() {
     // Initialize with first lot if available
     if (recentLots.length > 0) {
       const first = recentLots[0];
-      const prods = extractLotProducts(first).map((p) => ({ ...p, isSelected: true }));
+      const prods = extractLotProducts(first);
       setModalSelectedLots([
         {
           dailyProductionId: first.id,
@@ -321,22 +340,32 @@ export default function FumigationPage() {
   };
 
   // Extract products from a ProductionLotOption
-  const extractLotProducts = (lot: ProductionLotOption) => {
+  const extractLotProducts = (lot: ProductionLotOption): SelectedLotProductState[] => {
     if (lot.productionDetails && lot.productionDetails.length > 0) {
-      return lot.productionDetails.map((pd) => ({
-        id: pd.product?.id || pd.productId || '',
-        name: pd.product?.name || 'Polín Estándar',
-        dimensions: pd.product?.dimensions || 'N/A',
-        quantityProduced: pd.quantityProduced,
-      }));
+      return lot.productionDetails.map((pd) => {
+        const qtyProduced = pd.quantityProduced || 1;
+        return {
+          id: pd.product?.id || pd.productId || '',
+          name: pd.product?.name || 'Polín Estándar',
+          dimensions: pd.product?.dimensions || 'N/A',
+          quantityProduced: qtyProduced,
+          quantityFumigated: qtyProduced,
+          isSelected: true,
+          error: null,
+        };
+      });
     }
     if (lot.product && lot.product.id) {
+      const qtyProduced = (lot as any).quantityProduced || 1;
       return [
         {
           id: lot.product.id,
           name: lot.product.name,
           dimensions: lot.product.dimensions,
-          quantityProduced: undefined,
+          quantityProduced: qtyProduced,
+          quantityFumigated: qtyProduced,
+          isSelected: true,
+          error: null,
         },
       ];
     }
@@ -352,7 +381,7 @@ export default function FumigationPage() {
     const lotObj = recentLots.find((l) => l.id === lotId);
     if (!lotObj) return;
 
-    const prods = extractLotProducts(lotObj).map((p) => ({ ...p, isSelected: true }));
+    const prods = extractLotProducts(lotObj);
     setModalSelectedLots((prev) => [
       ...prev,
       {
@@ -371,6 +400,43 @@ export default function FumigationPage() {
     setModalSelectedLots((prev) => prev.filter((l) => l.dailyProductionId !== lotId));
   };
 
+  // Helper validation for quantity per product
+  const validateProductQty = (qty: number | '', max: number): string | null => {
+    if (qty === '' || isNaN(Number(qty))) {
+      return 'Debe ingresar una cantidad';
+    }
+    const num = Number(qty);
+    if (!Number.isInteger(num) || num <= 0) {
+      return 'Debe ser mayor a 0';
+    }
+    if (num > max) {
+      return `Máximo permitido: ${max} pcs`;
+    }
+    return null;
+  };
+
+  // Handle product quantity change
+  const handleProductQuantityChange = (lotId: string, productId: string, val: string) => {
+    setModalSelectedLots((prev) =>
+      prev.map((lot) => {
+        if (lot.dailyProductionId !== lotId) return lot;
+        return {
+          ...lot,
+          products: lot.products.map((p) => {
+            if (p.id !== productId) return p;
+            const parsedVal = val === '' ? '' : parseInt(val, 10);
+            const error = validateProductQty(parsedVal, p.quantityProduced);
+            return {
+              ...p,
+              quantityFumigated: parsedVal,
+              error,
+            };
+          }),
+        };
+      }),
+    );
+  };
+
   // Toggle product selection in lot
   const handleToggleProductInLot = (lotId: string, productId: string) => {
     setModalSelectedLots((prev) =>
@@ -378,9 +444,24 @@ export default function FumigationPage() {
         if (lot.dailyProductionId !== lotId) return lot;
         return {
           ...lot,
-          products: lot.products.map((p) =>
-            p.id === productId ? { ...p, isSelected: !p.isSelected } : p,
-          ),
+          products: lot.products.map((p) => {
+            if (p.id !== productId) return p;
+            const nextSelected = !p.isSelected;
+            const nextQty = nextSelected
+              ? p.quantityFumigated === '' || Number(p.quantityFumigated) <= 0
+                ? p.quantityProduced
+                : p.quantityFumigated
+              : p.quantityFumigated;
+            const nextError = nextSelected
+              ? validateProductQty(nextQty, p.quantityProduced)
+              : null;
+            return {
+              ...p,
+              isSelected: nextSelected,
+              quantityFumigated: nextQty,
+              error: nextError,
+            };
+          }),
         };
       }),
     );
@@ -393,7 +474,12 @@ export default function FumigationPage() {
         if (lot.dailyProductionId !== lotId) return lot;
         return {
           ...lot,
-          products: lot.products.map((p) => ({ ...p, isSelected: selectAll })),
+          products: lot.products.map((p) => ({
+            ...p,
+            isSelected: selectAll,
+            quantityFumigated: selectAll ? p.quantityProduced : p.quantityFumigated,
+            error: null,
+          })),
         };
       }),
     );
@@ -405,12 +491,31 @@ export default function FumigationPage() {
     (sum, l) => sum + l.products.filter((p) => p.isSelected).length,
     0,
   );
+  const totalTreatedPieces = modalSelectedLots.reduce(
+    (sum, l) =>
+      sum +
+      l.products
+        .filter((p) => p.isSelected && typeof p.quantityFumigated === 'number')
+        .reduce((pSum, p) => pSum + Number(p.quantityFumigated), 0),
+    0,
+  );
   const anyLotHasZeroProducts = modalSelectedLots.some(
     (l) => l.products.filter((p) => p.isSelected).length === 0,
+  );
+  const anyProductHasQuantityError = modalSelectedLots.some((l) =>
+    l.products.some(
+      (p) =>
+        p.isSelected &&
+        (p.error !== null ||
+          p.quantityFumigated === '' ||
+          Number(p.quantityFumigated) <= 0 ||
+          Number(p.quantityFumigated) > p.quantityProduced),
+    ),
   );
   const isFormValid =
     totalLotsSelected > 0 &&
     !anyLotHasZeroProducts &&
+    !anyProductHasQuantityError &&
     formCertificateNumber.trim().length > 0 &&
     formFile !== null;
 
@@ -426,6 +531,11 @@ export default function FumigationPage() {
 
     if (anyLotHasZeroProducts) {
       setFormError('Cada lote amparado debe tener al menos un producto seleccionado.');
+      return;
+    }
+
+    if (anyProductHasQuantityError) {
+      setFormError('Corrija las cantidades fumigadas inválidas antes de continuar.');
       return;
     }
 
@@ -460,7 +570,12 @@ export default function FumigationPage() {
 
       const lotsPayload = modalSelectedLots.map((lot) => ({
         dailyProductionId: lot.dailyProductionId,
-        productIds: lot.products.filter((p) => p.isSelected).map((p) => p.id),
+        products: lot.products
+          .filter((p) => p.isSelected)
+          .map((p) => ({
+            productId: p.id,
+            quantityFumigated: Number(p.quantityFumigated),
+          })),
       }));
 
       const formData = new FormData();
@@ -491,7 +606,7 @@ export default function FumigationPage() {
       }
 
       setSuccessMessage(
-        `Fumigación registrada exitosamente. Certificado OIRSA '${formCertificateNumber.trim()}' ampara ${totalLotsSelected} lote(s) y ${totalProductsSelected} producto(s).`,
+        `Fumigación registrada exitosamente. Certificado OIRSA '${formCertificateNumber.trim()}' ampara ${totalLotsSelected} lote(s), ${totalProductsSelected} producto(s) y ${totalTreatedPieces} piezas tratadas.`,
       );
       setTimeout(() => setSuccessMessage(null), 7000);
       setCurrentPage(1);
@@ -548,51 +663,88 @@ export default function FumigationPage() {
     setIsDrawerOpen(true);
   };
 
-  // Helper to extract covered lots and treated products for a record
+  // Helper to extract covered lots and treated products with quantities for a record
   const getFumigationSummary = (record: FumigationRecord) => {
-    const lotsMap = new Map<string, { lotNumber: string; date?: string }>();
-    const productsMap = new Map<string, { name: string; dimensions: string }>();
+    const lotsMap = new Map<
+      string,
+      {
+        lotNumber: string;
+        date?: string;
+        products: Array<{
+          name: string;
+          dimensions: string;
+          quantityFumigated: number;
+          quantityProduced?: number;
+        }>;
+      }
+    >();
 
     if (record.details && record.details.length > 0) {
       for (const d of record.details) {
-        if (d.dailyProduction) {
-          lotsMap.set(d.dailyProductionId, {
-            lotNumber: d.dailyProduction.productionLot,
-            date: d.dailyProduction.productionDate,
+        const dpId = d.dailyProductionId;
+        const lotNumber = d.dailyProduction?.productionLot || 'Lote';
+        const date = d.dailyProduction?.productionDate;
+        if (!lotsMap.has(dpId)) {
+          lotsMap.set(dpId, {
+            lotNumber,
+            date,
+            products: [],
           });
         }
-        if (d.product) {
-          productsMap.set(d.productId, {
-            name: d.product.name,
-            dimensions: d.product.dimensions,
-          });
-        }
-      }
-    } else if (record.dailyProduction) {
-      lotsMap.set(record.dailyProduction.id, {
-        lotNumber: record.dailyProduction.productionLot,
-        date: record.dailyProduction.productionDate,
-      });
-      if (record.dailyProduction.productionDetails && record.dailyProduction.productionDetails.length > 0) {
-        for (const pd of record.dailyProduction.productionDetails) {
-          if (pd.product) {
-            productsMap.set(pd.product.id || pd.product.name, {
-              name: pd.product.name,
-              dimensions: pd.product.dimensions,
-            });
-          }
-        }
-      } else if (record.dailyProduction.product) {
-        productsMap.set(record.dailyProduction.product.id || record.dailyProduction.product.name, {
-          name: record.dailyProduction.product.name,
-          dimensions: record.dailyProduction.product.dimensions,
+        const lotEntry = lotsMap.get(dpId)!;
+        const qtyFum = d.quantityFumigated || 0;
+        const qtyProd =
+          d.productionDetail?.quantityProduced ||
+          d.dailyProduction?.productionDetails?.find(
+            (pd: any) => pd.productId === d.productId || pd.product?.id === d.productId,
+          )?.quantityProduced;
+
+        lotEntry.products.push({
+          name: d.product?.name || 'Polín',
+          dimensions: d.product?.dimensions || 'N/A',
+          quantityFumigated: qtyFum,
+          quantityProduced: qtyProd,
         });
       }
+    } else if (record.dailyProduction) {
+      const dp = record.dailyProduction;
+      const prods: Array<{
+        name: string;
+        dimensions: string;
+        quantityFumigated: number;
+        quantityProduced?: number;
+      }> = [];
+
+      if (dp.productionDetails && dp.productionDetails.length > 0) {
+        for (const pd of dp.productionDetails) {
+          prods.push({
+            name: pd.product?.name || 'Polín',
+            dimensions: pd.product?.dimensions || 'N/A',
+            quantityFumigated: pd.quantityProduced || dp.quantityProduced || 0,
+            quantityProduced: pd.quantityProduced || dp.quantityProduced,
+          });
+        }
+      } else if (dp.product) {
+        prods.push({
+          name: dp.product.name,
+          dimensions: dp.product.dimensions,
+          quantityFumigated: dp.quantityProduced || 0,
+          quantityProduced: dp.quantityProduced,
+        });
+      }
+
+      lotsMap.set(dp.id, {
+        lotNumber: dp.productionLot,
+        date: dp.productionDate,
+        products: prods,
+      });
     }
 
+    const lots = Array.from(lotsMap.values());
+    const allProducts = lots.flatMap((l) => l.products);
     return {
-      lots: Array.from(lotsMap.values()),
-      products: Array.from(productsMap.values()),
+      lots,
+      products: allProducts,
     };
   };
 
@@ -751,54 +903,39 @@ export default function FumigationPage() {
                       {/* Fecha y Hora de Aplicación */}
                       <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
                         <div className="font-medium text-xs">{formatDate(item.fumigationDate)}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          {formatTime(item.fumigationTime)}
+                        <div className="text-[11px] text-slate-500 font-mono">
+                          {formatTime(item.fumigationTime ?? item.createdAt)}
                         </div>
                       </td>
 
                       {/* Lotes y Productos Amparados */}
                       <td className="py-3 px-4">
-                        <div className="space-y-1.5 max-w-[280px]">
-                          {/* Lotes */}
+                        <div className="space-y-1.5 max-w-[340px]">
                           {summary.lots.length === 0 ? (
                             <span className="text-slate-400 italic text-xs">Sin lote</span>
-                          ) : isMultiLot ? (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-bold text-[#1D71CB] text-xs">
-                                {summary.lots[0].lotNumber}
-                              </span>
-                              <span
-                                className="bg-blue-100 text-blue-800 font-sans font-bold px-1.5 py-0.5 rounded text-[10px] border border-blue-200 cursor-help"
-                                title={summary.lots.map((l) => l.lotNumber).join(', ')}
-                              >
-                                +{summary.lots.length - 1} lotes
-                              </span>
-                            </div>
                           ) : (
-                            <span className="font-mono font-bold text-[#1D71CB] text-xs">
-                              {summary.lots[0].lotNumber}
-                            </span>
-                          )}
-
-                          {/* Productos */}
-                          {summary.products.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {summary.products.slice(0, 2).map((prod, pIdx) => (
-                                <span
-                                  key={pIdx}
-                                  className="inline-flex items-center text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200"
-                                >
-                                  {prod.name}
+                            summary.lots.map((sLot, sIdx) => (
+                              <div key={sIdx} className="text-xs leading-relaxed">
+                                <span className="font-mono font-bold text-[#1D71CB]">
+                                  {sLot.lotNumber}:
+                                </span>{' '}
+                                <span className="text-slate-700">
+                                  {sLot.products.map((p, pIdx) => (
+                                    <span key={pIdx}>
+                                      {p.name}{' '}
+                                      <span className="tabular-nums font-mono font-semibold text-slate-900">
+                                        ({p.quantityFumigated}
+                                        {p.quantityProduced !== undefined && p.quantityProduced > 0
+                                          ? `/${p.quantityProduced}`
+                                          : ''}{' '}
+                                        pcs)
+                                      </span>
+                                      {pIdx < sLot.products.length - 1 ? ', ' : ''}
+                                    </span>
+                                  ))}
                                 </span>
-                              ))}
-                              {summary.products.length > 2 && (
-                                <span className="text-[10px] text-emerald-700 font-semibold self-center">
-                                  +{summary.products.length - 2} prod.
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic text-xs">Todos</span>
+                              </div>
+                            ))
                           )}
                         </div>
                       </td>
@@ -900,7 +1037,7 @@ export default function FumigationPage() {
                 <span className="text-slate-500 font-medium">Fecha y Hora de Tratamiento:</span>
                 <span className="font-semibold text-slate-800 font-mono">
                   {formatDate(selectedFumigation.fumigationDate)} •{' '}
-                  {formatTime(selectedFumigation.fumigationTime)}
+                  {formatTime(selectedFumigation.fumigationTime ?? selectedFumigation.createdAt)}
                 </span>
               </div>
               <div className="pt-2 border-t border-slate-200">
@@ -934,9 +1071,9 @@ export default function FumigationPage() {
             {/* BLOQUE 3: DETALLE FITOSANITARIO DE LOTES Y PRODUCTOS */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                   <Boxes className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Órdenes y Productos Amparados</span>
+                  <span>Detalle de Lotes y Productos Certificados</span>
                 </h4>
                 <Badge variant="institutional" size="sm">
                   {selectedFumigation.details && selectedFumigation.details.length > 0
@@ -945,57 +1082,74 @@ export default function FumigationPage() {
                 </Badge>
               </div>
 
-              {/* Si tiene details estructurados */}
               {selectedFumigation.details && selectedFumigation.details.length > 0 ? (
-                <div className="space-y-3">
-                  {/* Agrupar por orden de producción */}
-                  {Array.from(
-                    new Set(selectedFumigation.details.map((d) => d.dailyProductionId)),
-                  ).map((dpId) => {
-                    const groupDetails = selectedFumigation.details!.filter(
-                      (d) => d.dailyProductionId === dpId,
-                    );
-                    const lotInfo = groupDetails[0]?.dailyProduction;
+                <div className="rounded-xl border border-slate-200 overflow-hidden bg-white shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-semibold uppercase tracking-wider">
+                        <th className="py-2.5 px-3">Lote y Fecha</th>
+                        <th className="py-2.5 px-3">Producto y Dimensiones</th>
+                        <th className="py-2.5 px-3 text-right">Total Producido</th>
+                        <th className="py-2.5 px-3 text-right">Cant. Fumigada</th>
+                        <th className="py-2.5 px-3 text-right">% Tratado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedFumigation.details.map((det) => {
+                        const qtyProd =
+                          det.productionDetail?.quantityProduced ||
+                          det.dailyProduction?.productionDetails?.find(
+                            (pd) =>
+                              pd.productId === det.productId ||
+                              pd.product?.id === det.productId,
+                          )?.quantityProduced ||
+                          0;
+                        const qtyFum = det.quantityFumigated || 0;
+                        const percentage =
+                          qtyProd > 0 ? Math.round((qtyFum / qtyProd) * 100) : 100;
 
-                    return (
-                      <div
-                        key={dpId}
-                        className="border border-slate-200 rounded-xl p-3.5 bg-slate-50/50 space-y-2.5"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-blue-900 text-xs">
-                            {lotInfo?.productionLot || dpId}
-                          </span>
-                          {lotInfo?.productionDate && (
-                            <span className="text-[11px] text-slate-500 font-mono">
-                              Prod: {formatDate(lotInfo.productionDate)} (W{lotInfo.isoWeek})
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                          <span className="text-[10px] uppercase font-bold text-slate-400">
-                            Productos Tratados en este Lote:
-                          </span>
-                          <div className="space-y-1">
-                            {groupDetails.map((det) => (
-                              <div
-                                key={det.id}
-                                className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs"
-                              >
-                                <span className="font-semibold text-slate-900">
-                                  {det.product?.name || 'Polín'}
-                                </span>
-                                <span className="font-mono text-slate-500 text-[11px]">
-                                  {det.product?.dimensions || 'N/A'}
-                                </span>
+                        return (
+                          <tr key={det.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <div className="font-mono font-bold text-blue-900">
+                                {det.dailyProduction?.productionLot || 'Lote'}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                              {det.dailyProduction?.productionDate && (
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {formatDate(det.dailyProduction.productionDate)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <div className="font-semibold text-slate-900">
+                                {det.product?.name || 'Polín'}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {det.product?.dimensions || 'N/A'}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right tabular-nums font-mono text-slate-500">
+                              {qtyProd > 0 ? `${qtyProd.toLocaleString()} pcs` : 'N/A'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right tabular-nums font-mono font-bold text-emerald-700">
+                              {qtyFum.toLocaleString()} pcs
+                            </td>
+                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                                  percentage === 100
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {percentage}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               ) : selectedFumigation.dailyProduction ? (
                 /* Fallback legado monoproducto */
@@ -1288,38 +1442,85 @@ export default function FumigationPage() {
                         </div>
 
                         {/* Lista de Productos del Lote */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                           {lotState.products.map((prod) => (
-                            <label
+                            <div
                               key={prod.id}
-                              className={`flex items-start gap-2.5 p-3 rounded-lg border text-xs cursor-pointer transition ${
+                              className={`p-3.5 rounded-xl border text-xs transition space-y-2.5 ${
                                 prod.isSelected
-                                  ? 'bg-white border-blue-300 shadow-2xs'
-                                  : 'bg-slate-100/50 border-slate-200 text-slate-400'
+                                  ? prod.error
+                                    ? 'bg-rose-50/40 border-rose-300 shadow-2xs'
+                                    : 'bg-white border-blue-300 shadow-2xs'
+                                  : 'bg-slate-100/60 border-slate-200 text-slate-400'
                               }`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={prod.isSelected}
-                                onChange={() =>
-                                  handleToggleProductInLot(
-                                    lotState.dailyProductionId,
-                                    prod.id,
-                                  )
-                                }
-                                className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-slate-900 truncate">
-                                  {prod.name}
-                                </div>
-                                <div className="text-[11px] text-slate-500 font-mono">
-                                  {prod.dimensions}
-                                  {prod.quantityProduced !== undefined &&
-                                    ` • ${prod.quantityProduced} pcs`}
-                                </div>
+                              <div className="flex items-start justify-between gap-2.5">
+                                <label className="flex items-start gap-2.5 flex-1 min-w-0 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={prod.isSelected}
+                                    onChange={() =>
+                                      handleToggleProductInLot(
+                                        lotState.dailyProductionId,
+                                        prod.id,
+                                      )
+                                    }
+                                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-semibold text-slate-900 truncate">
+                                      {prod.name}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 font-mono">
+                                      {prod.dimensions}
+                                    </div>
+                                  </div>
+                                </label>
+
+                                <span className="font-mono text-xs text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shrink-0 self-start">
+                                  Producido: {prod.quantityProduced} pcs
+                                </span>
                               </div>
-                            </label>
+
+                              {/* Input de Cantidad a Fumigar * habilitado al seleccionarse */}
+                              {prod.isSelected && (
+                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <label className="text-[11px] font-semibold text-slate-700">
+                                    Cantidad a Fumigar *
+                                  </label>
+                                  <div className="flex flex-col items-end">
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={prod.quantityProduced}
+                                        placeholder="Ej: 20"
+                                        value={prod.quantityFumigated}
+                                        onChange={(e) =>
+                                          handleProductQuantityChange(
+                                            lotState.dailyProductionId,
+                                            prod.id,
+                                            e.target.value,
+                                          )
+                                        }
+                                        className={`w-28 text-xs p-1.5 rounded-lg border font-mono text-right tabular-nums focus:outline-none focus:ring-2 ${
+                                          prod.error
+                                            ? 'border-rose-500 bg-rose-50/70 text-rose-900 focus:ring-rose-500'
+                                            : 'border-slate-300 bg-slate-50 text-slate-900 focus:bg-white focus:ring-emerald-500'
+                                        }`}
+                                        required
+                                      />
+                                      <span className="text-[11px] font-mono text-slate-500">pcs</span>
+                                    </div>
+                                    {prod.error && (
+                                      <span className="text-[10px] text-rose-600 font-medium mt-1">
+                                        {prod.error}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -1332,9 +1533,14 @@ export default function FumigationPage() {
 
           {/* Modal Actions Footer */}
           <div className="px-6 sm:px-8 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-            <div className="text-xs text-slate-500">
-              <span className="font-semibold text-slate-700">Resumen:</span>{' '}
-              {totalLotsSelected} lote(s), {totalProductsSelected} producto(s), 1 certificado oficial PDF.
+            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">Resumen:</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200 font-mono font-bold text-xs">
+                Total Tratado: {totalTreatedPieces} piezas en {totalLotsSelected} lote(s)
+              </span>
+              <span className="text-slate-400 font-mono">
+                ({totalProductsSelected} producto(s) seleccionados)
+              </span>
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row gap-2.5 w-full sm:w-auto">
@@ -1357,7 +1563,7 @@ export default function FumigationPage() {
                     <span>Cargando y Guardando...</span>
                   </>
                 ) : (
-                  <span>Guardar Fumigación Multi-Lote</span>
+                  <span>Registrar Fumigación</span>
                 )}
               </button>
             </div>

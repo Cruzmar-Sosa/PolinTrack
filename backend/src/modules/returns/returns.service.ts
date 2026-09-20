@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DispatchStatus, MovementType, ReturnTypeEnum } from '@prisma/client';
+import { DispatchStatus, MovementType, ReturnDestination, ReturnTypeEnum } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InventoryLedgerService } from '../inventory/inventory-ledger.service';
 import { CreateReturnHeaderDto } from './dto/create-return.dto';
@@ -142,6 +142,7 @@ export class ReturnsService {
       // Inserción de líneas de devolución, actualización de acumulador y emisión en el ledger
       for (const item of dto.details) {
         const line = freshDetailsMap.get(item.dispatchDetailId)!;
+        const destination = item.destination || ReturnDestination.REPROCESO;
 
         // Inserción de ReturnDetail
         const createdReturnDetail = await tx.returnDetail.create({
@@ -150,6 +151,8 @@ export class ReturnsService {
             dispatchDetailId: item.dispatchDetailId,
             productId: line.productId,
             quantityReturned: item.quantityReturned,
+            destination,
+            notes: item.notes?.trim() || null,
           },
         });
 
@@ -164,7 +167,9 @@ export class ReturnsService {
           },
         });
 
-        // Reincorporación de inventario en el ledger append-only (MovementType.RETURN, +deltaQuantity, RN-010)
+        // Reincorporación de inventario en el ledger append-only (RN-010-B, RN-013-B)
+        // REPROCESO: Delta positivo (+N) que incrementa stock físico vendible
+        // DESECHO: Delta cero (0) para auditoría sin alterar stock disponible
         await this.inventoryLedgerService.recordMovement(
           {
             productId: line.productId,
@@ -173,6 +178,17 @@ export class ReturnsService {
             referenceTable: 'return_details',
             referenceId: createdReturnDetail.id,
             performedById: user.id,
+            destination,
+            metadata:
+              destination === ReturnDestination.DESECHO
+                ? {
+                    destination: 'DESECHO',
+                    discardedPieces: item.quantityReturned,
+                    ...(item.notes ? { notes: item.notes } : {}),
+                  }
+                : item.notes
+                ? { notes: item.notes }
+                : undefined,
           },
           tx,
         );

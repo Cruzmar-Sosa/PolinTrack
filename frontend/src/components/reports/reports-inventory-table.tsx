@@ -47,6 +47,11 @@ export function ReportsInventoryTable({
             <span className="text-xl font-black font-mono tabular-nums text-emerald-800 mt-0.5 block">
               +{summary.totalReturned.toLocaleString('es-NI')} pcs
             </span>
+            {(summary.totalReturnedRework !== undefined || summary.totalReturnedScrap !== undefined) && (
+              <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">
+                {summary.totalReturnedRework ?? 0} Rep · {summary.totalReturnedScrap ?? 0} Des
+              </span>
+            )}
           </div>
 
           <div className="p-3 bg-slate-900 text-white rounded-xl border border-slate-800 shadow-xs">
@@ -122,7 +127,21 @@ export function ReportsInventoryTable({
                           {item.totalDispatched.toLocaleString('es-NI')}
                         </td>
                         <td className="py-2.5 px-4 font-mono text-right tabular-nums text-emerald-800">
-                          +{item.totalReturned.toLocaleString('es-NI')}
+                          <div>+{item.totalReturned.toLocaleString('es-NI')}</div>
+                          {(item.totalReturnedRework !== undefined || item.totalReturnedScrap !== undefined) && (
+                            <div className="text-[10px] space-x-1 mt-0.5">
+                              {(item.totalReturnedRework ?? 0) > 0 && (
+                                <span className="text-emerald-700 font-semibold">
+                                  +{item.totalReturnedRework} rep
+                                </span>
+                              )}
+                              {(item.totalReturnedScrap ?? 0) > 0 && (
+                                <span className="text-rose-600 font-semibold">
+                                  {item.totalReturnedScrap} des
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2.5 px-4 font-mono text-right tabular-nums text-slate-600">
                           {item.netAdjustments > 0 ? `+${item.netAdjustments}` : item.netAdjustments}

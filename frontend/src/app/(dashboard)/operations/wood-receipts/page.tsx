@@ -587,8 +587,8 @@ export default function WoodReceiptsPage() {
                         <div className="font-medium text-slate-900">
                           {formatDate(r.receiptDate)}
                         </div>
-                        <div className="text-xs text-slate-400 font-mono">
-                          {formatTime(r.receiptTime)}
+                        <div className="text-xs text-slate-500 font-mono">
+                          {formatTime(r.receiptTime ?? r.createdAt)}
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
@@ -712,10 +712,12 @@ export default function WoodReceiptsPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-slate-400">Hora de Llegada:</span>
-                  <p className="font-mono font-semibold text-slate-800 mt-0.5">
-                    {formatTime(selectedReceipt.receiptTime)}
-                  </p>
+                  <span className="text-xs text-slate-500 block uppercase font-semibold">
+                    Hora de Llegada:
+                  </span>
+                  <span className="text-sm font-medium text-slate-900 font-mono">
+                    {formatTime(selectedReceipt.receiptTime ?? selectedReceipt.createdAt)}
+                  </span>
                 </div>
               </div>
 

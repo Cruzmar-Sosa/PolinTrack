@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { MovementType } from '@prisma/client';
+import { MovementType, ReturnDestination } from '@prisma/client';
 import { InventoryLedgerService } from './inventory-ledger.service';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -33,6 +33,10 @@ describe('InventoryLedgerService', () => {
       },
       user: {
         findUnique: jest.fn().mockResolvedValue(mockUser),
+      },
+      returnDetail: {
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
       inventoryMovement: {
         create: jest.fn().mockImplementation(({ data }) =>
@@ -156,11 +160,12 @@ describe('InventoryLedgerService', () => {
       expect(prisma.inventoryMovement.create).not.toHaveBeenCalled();
     });
 
-    it('should record RETURN movement with positive deltaQuantity (+N, RN-013)', async () => {
+    it('should record RETURN movement with positive deltaQuantity (+N, RN-013) when destination is REPROCESO', async () => {
       const result = await service.recordMovement({
         productId: mockProductId,
         movementType: MovementType.RETURN,
         quantity: 50,
+        destination: ReturnDestination.REPROCESO,
         referenceTable: 'return_details',
         referenceId: mockReferenceId,
         performedById: mockUserId,
@@ -172,6 +177,39 @@ describe('InventoryLedgerService', () => {
           data: expect.objectContaining({
             deltaQuantity: 50,
             movementType: MovementType.RETURN,
+            destination: ReturnDestination.REPROCESO,
+          }),
+        }),
+      );
+    });
+
+    it('should record RETURN movement with deltaQuantity = 0 and metadata when destination is DESECHO', async () => {
+      const result = await service.recordMovement({
+        productId: mockProductId,
+        movementType: MovementType.RETURN,
+        quantity: 30,
+        destination: ReturnDestination.DESECHO,
+        referenceTable: 'return_details',
+        referenceId: mockReferenceId,
+        performedById: mockUserId,
+        metadata: {
+          destination: ReturnDestination.DESECHO,
+          discardedPieces: 30,
+          reason: 'Dañada',
+        },
+      });
+
+      expect(result.deltaQuantity).toBe(0);
+      expect(prisma.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            deltaQuantity: 0,
+            movementType: MovementType.RETURN,
+            destination: ReturnDestination.DESECHO,
+            metadata: expect.objectContaining({
+              destination: 'DESECHO',
+              discardedPieces: 30,
+            }),
           }),
         }),
       );
@@ -280,13 +318,21 @@ describe('InventoryLedgerService', () => {
   });
 
   describe('getStockBalance (EP-INV-01 Consolidated Balance)', () => {
-    it('should calculate availableStock as produced - dispatched + returned + adjustments', async () => {
+    it('should calculate availableStock as produced - dispatched + returned + adjustments and segregate rework vs scrap', async () => {
+      prisma.returnDetail.groupBy.mockResolvedValue([
+        { productId: mockProductId, destination: ReturnDestination.REPROCESO, _sum: { quantityReturned: 20 } },
+        { productId: mockProductId, destination: ReturnDestination.DESECHO, _sum: { quantityReturned: 10 } },
+      ]);
+
       const balance = await service.getStockBalance();
       expect(balance).toHaveLength(1);
       const prodStock = balance[0];
       expect(prodStock.productId).toBe(mockProductId);
       expect(prodStock.producedQuantity).toBe(500);
       expect(prodStock.dispatchedQuantity).toBe(400);
+      expect(prodStock.totalReturnedRework).toBe(20);
+      expect(prodStock.totalReturnedScrap).toBe(10);
+      expect(prodStock.totalReturned).toBe(30);
       // Available = 500 - 400 = 100
       expect(prodStock.availableStock).toBe(100);
     });

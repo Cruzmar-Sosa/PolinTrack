@@ -165,15 +165,22 @@ export function ReportsFumigationsTable({
                     </td>
                     <td className="py-2.5 px-3 text-slate-700">
                       {item.treatedProducts && item.treatedProducts.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {item.treatedProducts.map((pName, pIdx) => (
-                            <span
-                              key={pIdx}
-                              className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-[10px] border border-slate-200 truncate"
-                            >
-                              {pName}
-                            </span>
-                          ))}
+                        <div className="space-y-1 max-w-[220px]">
+                          <div className="flex flex-wrap gap-1">
+                            {item.treatedProducts.map((pName, pIdx) => (
+                              <span
+                                key={pIdx}
+                                className="bg-purple-50 text-purple-900 border border-purple-200 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium"
+                              >
+                                {pName}
+                              </span>
+                            ))}
+                          </div>
+                          {item.totalQuantityFumigated !== undefined && (
+                            <div className="text-[10px] font-mono text-slate-500">
+                              Total: <strong className="text-emerald-700 font-bold">{item.totalQuantityFumigated} pcs</strong>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-400 italic">Todos</span>

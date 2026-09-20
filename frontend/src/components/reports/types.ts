@@ -47,6 +47,8 @@ export interface DispatchReportItem {
   dimensions: string;
   quantityDispatched: number;
   quantityReturnedAccumulated: number;
+  quantityReturnedRework?: number;
+  quantityReturnedScrap?: number;
   vehicleInfo?: string | null;
   driverName?: string | null;
   status: string;
@@ -63,6 +65,8 @@ export interface InventoryReportItem {
   totalProduced: number;
   totalDispatched: number;
   totalReturned: number;
+  totalReturnedRework?: number;
+  totalReturnedScrap?: number;
   netAdjustments: number;
   currentAvailableStock: number;
 }
@@ -71,6 +75,8 @@ export interface InventoryReportSummary {
   totalProduced: number;
   totalDispatched: number;
   totalReturned: number;
+  totalReturnedRework?: number;
+  totalReturnedScrap?: number;
   totalAvailableStock: number;
 }
 
@@ -104,6 +110,7 @@ export interface FumigationReportItem {
   pdfFileName: string;
   fileSizeBytes: number;
   certificateDownloadUrl: string;
+  totalQuantityFumigated?: number;
   registeredBy: string;
 }
 

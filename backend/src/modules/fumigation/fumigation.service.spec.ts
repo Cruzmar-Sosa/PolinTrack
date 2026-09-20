@@ -251,6 +251,113 @@ describe('FumigationService', () => {
         /no pertenece a la orden de producción/,
       );
     });
+
+    it('debe rechazar con 400 Bad Request si quantityFumigated es menor o igual a 0 (RN-FUM-QTY)', async () => {
+      prisma.dailyProduction.findUnique.mockResolvedValue(mockDailyProduction1);
+
+      const dto = {
+        lots: [
+          {
+            dailyProductionId: mockDailyProduction1.id,
+            products: [{ productId: 'product-uuid-1', quantityFumigated: 0 }],
+          },
+        ],
+        fumigationDate: '2026-09-02',
+        fumigationTime: '14:30',
+        certificateNumber: 'OIRSA-123',
+      };
+
+      await expect(service.create(dto, createMockFile(), mockUser)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.create(dto, createMockFile(), mockUser)).rejects.toThrow(
+        /La cantidad a fumigar debe ser un número entero mayor a 0/,
+      );
+    });
+
+    it('debe rechazar con 400 Bad Request si quantityFumigated excede la cantidad producida (RN-FUM-QTY)', async () => {
+      prisma.dailyProduction.findUnique.mockResolvedValue(mockDailyProduction1);
+
+      // product-uuid-2 tiene quantityProduced = 40 en mockDailyProduction1
+      const dto = {
+        lots: [
+          {
+            dailyProductionId: mockDailyProduction1.id,
+            products: [{ productId: 'product-uuid-2', quantityFumigated: 41 }],
+          },
+        ],
+        fumigationDate: '2026-09-02',
+        fumigationTime: '14:30',
+        certificateNumber: 'OIRSA-123',
+      };
+
+      await expect(service.create(dto, createMockFile(), mockUser)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.create(dto, createMockFile(), mockUser)).rejects.toThrow(
+        /excede el total producido \(40\)/,
+      );
+    });
+
+    it('debe registrar exitosamente una fumigación parcial (ej. 20 de 40 piezas) (RN-FUM-QTY)', async () => {
+      prisma.dailyProduction.findUnique.mockResolvedValue(mockDailyProduction1);
+
+      const mockCreatedFumigation = {
+        id: 'fumigation-uuid-partial',
+        dailyProductionId: mockDailyProduction1.id,
+        fumigationDate: new Date('2026-09-02T00:00:00.000Z'),
+        fumigationTime: new Date('1970-01-01T14:30:00.000Z'),
+        certificateNumber: 'OIRSA-2026-PARTIAL',
+        observations: 'Fumigación parcial de lote',
+        pdfFilePath: 'certificates/2026/09/sample.pdf',
+        pdfFileName: 'OIRSA-CERT-2026-001.pdf',
+        fileSizeBytes: validPdfBuffer.length,
+        registeredById: mockUser.id,
+        details: [
+          {
+            id: 'fdetail-partial-1',
+            dailyProductionId: mockDailyProduction1.id,
+            productId: 'product-uuid-2',
+            productionDetailId: 'detail-uuid-2',
+            quantityFumigated: 20,
+          },
+        ],
+      };
+
+      prisma.fumigation.create.mockResolvedValue(mockCreatedFumigation);
+      prisma.auditLog.create.mockResolvedValue({ id: 'audit-uuid-partial' });
+
+      const dto = {
+        lots: [
+          {
+            dailyProductionId: mockDailyProduction1.id,
+            products: [{ productId: 'product-uuid-2', quantityFumigated: 20 }], // 20 de 40 piezas
+          },
+        ],
+        fumigationDate: '2026-09-02',
+        fumigationTime: '14:30',
+        certificateNumber: 'OIRSA-2026-PARTIAL',
+      };
+
+      const result = await service.create(dto, createMockFile(), mockUser);
+
+      expect(result.success).toBe(true);
+      expect(prisma.fumigation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            details: {
+              create: [
+                expect.objectContaining({
+                  dailyProductionId: mockDailyProduction1.id,
+                  productId: 'product-uuid-2',
+                  quantityFumigated: 20,
+                }),
+              ],
+            },
+          }),
+        }),
+      );
+    });
   });
 
   describe('create - Flujo Exitoso Multi-Lote, Inmutabilidad y Auditoría', () => {

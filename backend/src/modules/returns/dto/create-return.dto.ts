@@ -1,6 +1,7 @@
 import {
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsISO8601,
   IsInt,
   IsNotEmpty,
@@ -17,6 +18,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ReturnDestination } from '@prisma/client';
 
 @ValidatorConstraint({ name: 'isNotFutureDate', async: false })
 export class IsNotFutureDateConstraint implements ValidatorConstraintInterface {
@@ -54,6 +56,23 @@ export class CreateReturnDetailDto {
   @IsInt({ message: 'La cantidad devuelta debe ser un número entero' })
   @Min(1, { message: 'La cantidad devuelta debe ser al menos 1 pieza' })
   quantityReturned: number;
+
+  @ApiPropertyOptional({
+    description: 'Destino operativo de la madera devuelta: REPROCESO (reingresa a stock) o DESECHO (scrap)',
+    enum: ReturnDestination,
+    default: ReturnDestination.REPROCESO,
+  })
+  @IsOptional()
+  @IsEnum(ReturnDestination, { message: 'El destino debe ser REPROCESO o DESECHO' })
+  destination?: ReturnDestination;
+
+  @ApiPropertyOptional({
+    description: 'Notas técnicas específicas de la línea devuelta',
+    example: 'Piezas con curvatura excesiva',
+  })
+  @IsOptional()
+  @IsString({ message: 'notes debe ser una cadena de texto' })
+  notes?: string;
 }
 
 export class CreateReturnHeaderDto {

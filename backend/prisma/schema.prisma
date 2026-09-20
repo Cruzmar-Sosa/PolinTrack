@@ -51,6 +51,11 @@ enum ReturnTypeEnum {
   PARCIAL
 }
 
+enum ReturnDestination {
+  REPROCESO
+  DESECHO
+}
+
 enum MovementType {
   PRODUCTION // Increments physical stock (+)
   DISPATCH   // Decrements physical stock (-)
@@ -294,6 +299,7 @@ model FumigationDetail {
   dailyProductionId  String   @map("daily_production_id") @db.Uuid
   productId          String   @map("product_id") @db.Uuid
   productionDetailId String?  @map("production_detail_id") @db.Uuid
+  quantityFumigated  Int      @map("quantity_fumigated")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   fumigation       Fumigation        @relation(fields: [fumigationId], references: [id], onDelete: Cascade)
@@ -381,11 +387,14 @@ model ReturnHeader {
 }
 
 model ReturnDetail {
-  id               String @id @default(uuid()) @db.Uuid
-  returnHeaderId   String @map("return_header_id") @db.Uuid
-  dispatchDetailId String @map("dispatch_detail_id") @db.Uuid
-  productId        String @map("product_id") @db.Uuid
-  quantityReturned Int    @map("quantity_returned")
+  id               String            @id @default(uuid()) @db.Uuid
+  returnHeaderId   String            @map("return_header_id") @db.Uuid
+  dispatchDetailId String            @map("dispatch_detail_id") @db.Uuid
+  productId        String            @map("product_id") @db.Uuid
+  quantityReturned Int               @map("quantity_returned")
+  destination      ReturnDestination @default(REPROCESO) @map("destination")
+  notes            String?           @db.Text
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
 
   returnHeader   ReturnHeader   @relation(fields: [returnHeaderId], references: [id], onDelete: Cascade)
   dispatchDetail DispatchDetail @relation(fields: [dispatchDetailId], references: [id])
@@ -393,6 +402,7 @@ model ReturnDetail {
 
   @@index([returnHeaderId])
   @@index([dispatchDetailId])
+  @@index([productId])
   @@map("return_details")
 }
 
@@ -426,14 +436,16 @@ model InventoryAdjustment {
 // ==============================================================================
 
 model InventoryMovement {
-  id             String       @id @default(uuid()) @db.Uuid
-  productId      String       @map("product_id") @db.Uuid
-  movementType   MovementType @map("movement_type")
-  deltaQuantity  Int          @map("delta_quantity") // Signed (+ or -)
-  referenceTable String       @map("reference_table") @db.VarChar(50)
-  referenceId    String       @map("reference_id") @db.Uuid
-  timestamp      DateTime     @default(now()) @db.Timestamptz
-  performedById  String       @map("performed_by_id") @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
+  productId      String              @map("product_id") @db.Uuid
+  movementType   MovementType        @map("movement_type")
+  deltaQuantity  Int                 @map("delta_quantity") // Signed (+ or -)
+  referenceTable String              @map("reference_table") @db.VarChar(50)
+  referenceId    String              @map("reference_id") @db.Uuid
+  destination    ReturnDestination?  @map("destination")
+  metadata       Json?               @map("metadata")
+  timestamp      DateTime            @default(now()) @db.Timestamptz
+  performedById  String              @map("performed_by_id") @db.Uuid
 
   product     Product @relation(fields: [productId], references: [id])
   performedBy User    @relation(fields: [performedById], references: [id])

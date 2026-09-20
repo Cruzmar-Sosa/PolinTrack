@@ -78,8 +78,26 @@ export class FumigationDetailResponseDto {
   })
   productionDetailId?: string | null;
 
+  @ApiProperty({
+    example: 40,
+    description: 'Cantidad exacta de piezas tratadas del producto amparadas bajo este certificado',
+  })
+  quantityFumigated: number;
+
   @ApiProperty({ example: '2026-09-02T14:35:00.000Z' })
   createdAt: Date;
+
+  @ApiPropertyOptional({
+    example: {
+      id: 'c4d5e6f7-a8b9-0123-cdef-234567890123',
+      quantityProduced: 50,
+    },
+    nullable: true,
+  })
+  productionDetail?: {
+    id: string;
+    quantityProduced: number;
+  } | null;
 
   @ApiPropertyOptional({
     example: {
