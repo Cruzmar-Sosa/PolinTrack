@@ -20,7 +20,7 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'hidden lg:flex flex-col flex-shrink-0 bg-[#0D1B36] text-slate-200 border-r border-slate-800/80 transition-all duration-300 ease-in-out z-30 h-screen sticky top-0',
+        'hidden lg:flex flex-col flex-shrink-0 bg-[#0D1B36] text-slate-200 border-r border-slate-800/80 transition-all duration-300 ease-in-out z-30 h-screen sticky top-0 print:hidden',
         isCollapsed ? 'w-[72px]' : 'w-[260px]',
       )}
     >

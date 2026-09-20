@@ -113,7 +113,7 @@ export function ReportsFilterBar({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print:hidden">
       {/* 1. REPORT TABS SELECTOR */}
       <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl bg-slate-100 border border-slate-200 print:hidden">
         {tabs.map((tab) => {

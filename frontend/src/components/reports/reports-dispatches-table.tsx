@@ -26,8 +26,8 @@ export function ReportsDispatchesTable({
   const totalDispatched = data.reduce((sum, item) => sum + (Number(item.quantityDispatched) || 0), 0);
 
   return (
-    <Card className="border-slate-200 shadow-xs overflow-hidden">
-      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <Card className="border-slate-200 shadow-xs overflow-hidden print:border-0 print:shadow-none print:rounded-none">
+      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-amber-50 text-[#D97706]">
             <Truck className="w-4 h-4" />
@@ -52,8 +52,8 @@ export function ReportsDispatchesTable({
       </div>
 
       <CardContent className="p-0">
-        <div className="overflow-x-auto w-full">
-          <table className="w-full text-xs text-left min-w-[1050px]">
+        <div className="overflow-x-auto print:overflow-visible w-full">
+          <table className="w-full text-xs text-left min-w-[1050px] print:min-w-0 print:w-full print:text-[11px] md:print:text-xs">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th className="py-2.5 px-4 whitespace-nowrap">Fecha</th>

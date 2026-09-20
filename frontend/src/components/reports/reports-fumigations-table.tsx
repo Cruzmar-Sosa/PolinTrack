@@ -82,8 +82,8 @@ export function ReportsFumigationsTable({
   };
 
   return (
-    <Card className="border-slate-200 shadow-xs overflow-hidden">
-      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <Card className="border-slate-200 shadow-xs overflow-hidden print:border-0 print:shadow-none print:rounded-none">
+      <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-purple-50 text-[#7C3AED]">
             <ShieldCheck className="w-4 h-4" />
@@ -121,8 +121,8 @@ export function ReportsFumigationsTable({
       )}
 
       <CardContent className="p-0">
-        <div className="overflow-x-auto w-full">
-          <table className="w-full text-xs text-left min-w-[950px]">
+        <div className="overflow-x-auto print:overflow-visible w-full">
+          <table className="w-full text-xs text-left min-w-[950px] print:min-w-0 print:w-full print:text-[11px] md:print:text-xs">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th className="py-2.5 px-4 whitespace-nowrap">Fecha</th>
@@ -132,7 +132,7 @@ export function ReportsFumigationsTable({
                 <th className="py-2.5 px-3 whitespace-nowrap">Productos Tratados</th>
                 <th className="py-2.5 px-3 whitespace-nowrap">Archivo PDF</th>
                 <th className="py-2.5 px-4 whitespace-nowrap">Registrado Por</th>
-                <th className="py-2.5 px-4 text-center whitespace-nowrap">Acción</th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap print:hidden">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -192,7 +192,7 @@ export function ReportsFumigationsTable({
                     <td className="py-2.5 px-4 text-slate-600 truncate max-w-[120px]" title={item.registeredBy}>
                       {item.registeredBy}
                     </td>
-                    <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                    <td className="py-2.5 px-4 text-center whitespace-nowrap print:hidden">
                       <Button
                         variant="outline"
                         size="sm"

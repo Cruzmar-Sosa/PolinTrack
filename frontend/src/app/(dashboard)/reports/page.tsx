@@ -30,10 +30,10 @@ import { ReportsInventoryTable } from '@/components/reports/reports-inventory-ta
 import { ReportsProductionTable } from '@/components/reports/reports-production-table';
 import { ReportsFumigationsTable } from '@/components/reports/reports-fumigations-table';
 import { ReportsDistributionTable } from '@/components/reports/reports-distribution-table';
-import { formatDate, formatTime, getTodayCalendarDate } from '@/lib/date-formatters';
+import { formatDate, formatTime, formatDateTime, getTodayCalendarDate } from '@/lib/date-formatters';
 
 export default function ReportsPage() {
-  const { session, role } = useAuth();
+  const { session, role, user } = useAuth();
   const token = session?.access_token;
   const searchParams = useSearchParams();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
@@ -420,12 +420,47 @@ export default function ReportsPage() {
     return { filename, headers, rows };
   }, [activeTab, woodReceipts, dispatches, inventory, productions, fumigations, distributions]);
 
+  const tituloReporte = useMemo(() => {
+    switch (activeTab) {
+      case 'wood-receipts':
+        return 'Reporte 1: Recepciones de Madera (M01)';
+      case 'dispatches':
+        return 'Reporte 2: Despachos a Centros de Distribución (M06)';
+      case 'inventory':
+        return 'Reporte 3: Balance Global de Inventario (M10)';
+      case 'daily-productions':
+        return 'Reporte 4: Producción Diaria de Polines (M04)';
+      case 'fumigations':
+        return 'Reporte 5: Certificados de Fumigación OIRSA (M05)';
+      case 'distribution-centers':
+        return 'Reporte 6: Resumen por Centro de Distribución (M06)';
+      default:
+        return 'Reporte Oficial';
+    }
+  }, [activeTab]);
+
   return (
-    <div className="space-y-6 pb-20 max-w-7xl mx-auto">
+    <div className="space-y-6 pb-20 max-w-7xl mx-auto print:max-w-none print:w-full print:p-0 print:m-0 print:pb-0">
+      {/* ==================================================================== */}
+      {/* 0. PRINT-ONLY OFFICIAL LETTERHEAD                                   */}
+      {/* ==================================================================== */}
+      <div className="hidden print:block mb-6 border-b-2 border-slate-800 pb-4">
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-2xl font-bold text-black uppercase tracking-wider">PolinTrack ERP</h1>
+            <h2 className="text-lg font-semibold text-slate-700">{tituloReporte}</h2>
+          </div>
+          <div className="text-right text-xs text-slate-600">
+            <p>Generado el: {formatDateTime(new Date()).full}</p>
+            <p>Usuario: {user?.fullName || 'Usuario PolinTrack'}</p>
+          </div>
+        </div>
+      </div>
+
       {/* ==================================================================== */}
       {/* 1. HEADER ROW                                                       */}
       {/* ==================================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4 print:hidden">
         <div>
           <div className="flex items-center gap-2.5">
             <PageTitle>Centro de Reportes Oficiales</PageTitle>

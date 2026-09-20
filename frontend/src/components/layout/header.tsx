@@ -79,7 +79,7 @@ export function Header({
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200/80 sticky top-0 z-20 flex items-center justify-between px-4 lg:px-6 shadow-sm">
+      <header className="h-16 bg-white border-b border-slate-200/80 sticky top-0 z-20 flex items-center justify-between px-4 lg:px-6 shadow-sm print:hidden">
         {/* Lado Izquierdo: Botones de Alternancia + Breadcrumbs */}
         <div className="flex items-center gap-3 md:gap-4 min-w-0">
           {/* Botón móvil (abre Drawer en <1024px) */}
