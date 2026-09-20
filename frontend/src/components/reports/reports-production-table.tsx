@@ -58,6 +58,7 @@ export function ReportsProductionTable({
               <tr>
                 <th className="py-2.5 px-4">Fecha</th>
                 <th className="py-2.5 px-3">Lote Producción</th>
+                <th className="py-2.5 px-3 text-center">Tipo de Ingreso</th>
                 <th className="py-2.5 px-3 text-center">Semana ISO</th>
                 <th className="py-2.5 px-3">Producto</th>
                 <th className="py-2.5 px-3">Dimensiones</th>
@@ -75,6 +76,17 @@ export function ReportsProductionTable({
                     </td>
                     <td className="py-2.5 px-3 font-mono font-bold text-blue-900 whitespace-nowrap">
                       {item.productionLot}
+                    </td>
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      {item.isInitialInventory || item.productionLot?.startsWith('INV-INI-') ? (
+                        <Badge variant="purple" size="sm">
+                          INVENTARIO INICIAL
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" size="sm">
+                          PRODUCCIÓN
+                        </Badge>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <Badge variant="default" size="sm">
@@ -111,7 +123,7 @@ export function ReportsProductionTable({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400 italic">
+                  <td colSpan={9} className="py-12 text-center text-slate-400 italic">
                     No se encontraron órdenes de producción para los filtros seleccionados
                   </td>
                 </tr>

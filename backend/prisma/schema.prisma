@@ -57,10 +57,11 @@ enum ReturnDestination {
 }
 
 enum MovementType {
-  PRODUCTION // Increments physical stock (+)
-  DISPATCH   // Decrements physical stock (-)
-  RETURN     // Increments physical stock (+)
-  ADJUSTMENT // Signed adjustment (+/-)
+  PRODUCTION         // Increments physical stock (+)
+  DISPATCH           // Decrements physical stock (-)
+  RETURN             // Increments physical stock (+)
+  ADJUSTMENT         // Signed adjustment (+/-)
+  INITIAL_INVENTORY  // Initial physical stock baseline (+)
 }
 
 enum AdjustmentType {
@@ -213,14 +214,15 @@ model WoodReceipt {
 // ==============================================================================
 
 model DailyProduction {
-  id               String   @id @default(uuid()) @db.Uuid
-  productionLot    String   @map("production_lot") @db.VarChar(50) // LT-DDMMYY-WXX (operational label, not unique — multiple records per day allowed per TSK-20.3)
-  productionDate   DateTime @map("production_date") @db.Date
-  isoWeek          Int      @map("iso_week") // 1..53 ISO 8601
-  productId        String?  @map("product_id") @db.Uuid
-  quantityProduced Int?     @map("quantity_produced")
-  createdById      String   @map("created_by_id") @db.Uuid
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id                 String   @id @default(uuid()) @db.Uuid
+  productionLot      String   @map("production_lot") @db.VarChar(50) // LT-DDMMYY-WXX or INV-INI-DDMMYY-XX
+  productionDate     DateTime @map("production_date") @db.Date
+  isoWeek            Int      @map("iso_week") // 1..53 ISO 8601
+  productId          String?  @map("product_id") @db.Uuid
+  quantityProduced   Int?     @map("quantity_produced")
+  isInitialInventory Boolean  @default(false) @map("is_initial_inventory") // TSK-PRD-INI: true = initial stock baseline
+  createdById        String   @map("created_by_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   product                Product?                @relation(fields: [productId], references: [id])
   createdBy              User                    @relation(fields: [createdById], references: [id])

@@ -88,6 +88,7 @@ export interface DailyProductionReportItem {
   productionDate: string;
   productionLot: string;
   isoWeek: number;
+  isInitialInventory?: boolean;
   productName: string;
   dimensions: string;
   quantityProduced: number;

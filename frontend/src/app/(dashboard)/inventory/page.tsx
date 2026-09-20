@@ -64,7 +64,7 @@ interface ProductStock {
 interface KardexMovement {
   id: string;
   productId: string;
-  movementType: 'PRODUCTION' | 'DISPATCH' | 'RETURN' | 'ADJUSTMENT';
+  movementType: 'PRODUCTION' | 'DISPATCH' | 'RETURN' | 'ADJUSTMENT' | 'INITIAL_INVENTORY';
   deltaQuantity: number;
   destination?: 'REPROCESO' | 'DESECHO' | null;
   metadata?: any;
@@ -552,6 +552,7 @@ export default function InventoryPage() {
                   >
                     <option value="">Todos los tipos</option>
                     <option value="PRODUCTION">PRODUCCIÓN (+)</option>
+                    <option value="INITIAL_INVENTORY">INVENTARIO INICIAL (+)</option>
                     <option value="DISPATCH">DESPACHO (-)</option>
                     <option value="RETURN">DEVOLUCIÓN (+)</option>
                     <option value="ADJUSTMENT">AJUSTE (±)</option>
@@ -654,6 +655,12 @@ export default function InventoryPage() {
                               <Badge variant="success">
                                 <ArrowDownLeft className="w-3 h-3 mr-1 inline" />
                                 PRODUCCIÓN
+                              </Badge>
+                            )}
+                            {mov.movementType === 'INITIAL_INVENTORY' && (
+                              <Badge variant="purple">
+                                <Layers className="w-3 h-3 mr-1 inline" />
+                                INVENTARIO INICIAL
                               </Badge>
                             )}
                             {mov.movementType === 'DISPATCH' && (

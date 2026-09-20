@@ -76,7 +76,8 @@ export class InventoryLedgerService {
 
     switch (movementType) {
       case MovementType.PRODUCTION:
-        // Daily Production increments finished product stock (+N)
+      case MovementType.INITIAL_INVENTORY:
+        // Daily Production or Initial Inventory increments finished product stock (+N)
         deltaQuantity = Math.abs(quantity);
         break;
 
@@ -225,7 +226,8 @@ export class InventoryLedgerService {
 
     const result: ProductStockDto[] = products.map((prod) => {
       const prodMovements = movementMap.get(prod.id);
-      const produced = prodMovements?.get(MovementType.PRODUCTION) ?? 0;
+      const produced = (prodMovements?.get(MovementType.PRODUCTION) ?? 0) +
+        (prodMovements?.get(MovementType.INITIAL_INVENTORY) ?? 0);
       const dispatchedRaw = prodMovements?.get(MovementType.DISPATCH) ?? 0;
       const dispatched = Math.abs(dispatchedRaw);
       const returnedReworkLedger = prodMovements?.get(MovementType.RETURN) ?? 0;
@@ -236,7 +238,7 @@ export class InventoryLedgerService {
       const totalReturnedScrap = returnBreakdown.scrap;
       const totalReturned = totalReturnedRework + totalReturnedScrap;
 
-      // Available stock = sum of all signed deltas: Produced - Dispatched + Reproceso ± Adjustments (RN-010-B)
+      // Available stock = sum of all signed deltas: (Produced + InitialInventory) - Dispatched + Reproceso ± Adjustments (RN-010-B)
       const availableStock = produced - dispatched + returnedReworkLedger + adjustment;
 
       return {

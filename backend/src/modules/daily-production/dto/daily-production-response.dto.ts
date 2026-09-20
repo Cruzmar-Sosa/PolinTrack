@@ -59,6 +59,9 @@ export class DailyProductionItemDto {
   @ApiProperty({ example: 36 })
   isoWeek: number;
 
+  @ApiPropertyOptional({ example: false })
+  isInitialInventory?: boolean;
+
   @ApiProperty({ type: [ProductionDetailResponseDto] })
   productionDetails: ProductionDetailResponseDto[];
 

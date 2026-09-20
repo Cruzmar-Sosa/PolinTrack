@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -46,6 +47,16 @@ export class CreateDailyProductionDto {
   productionDate: string;
 
   @ApiPropertyOptional({
+    description:
+      'Indica si esta orden corresponde a un Inventario Inicial (saldo base sin materia prima de origen). TSK-PRD-INI.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'isInitialInventory debe ser un valor booleano' })
+  @Transform(({ value }) => value === true || value === 'true')
+  isInitialInventory?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Lista de productos terminados fabricados en la jornada física',
     type: [ProductionProductItemDto],
   })
@@ -75,7 +86,7 @@ export class CreateDailyProductionDto {
 
   @ApiPropertyOptional({
     description:
-      'Lotes de madera de patio utilizados como materia prima (trazabilidad referencial M:N, sin cálculo de merma D-023)',
+      'Lotes de madera de patio utilizados como materia prima (trazabilidad referencial M:N, sin cálculo de merma D-023). No aplica cuando isInitialInventory=true.',
     example: [
       '1ba7b810-9dad-11d1-80b4-00c04fd430c1',
       '2ba7b810-9dad-11d1-80b4-00c04fd430c2',
@@ -91,3 +102,4 @@ export class CreateDailyProductionDto {
   })
   woodReceiptIds?: string[];
 }
+

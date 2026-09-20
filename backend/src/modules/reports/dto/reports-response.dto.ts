@@ -217,6 +217,9 @@ export class DailyProductionReportItemDto {
   @ApiProperty({ example: 36 })
   isoWeek: number;
 
+  @ApiPropertyOptional({ example: false })
+  isInitialInventory?: boolean;
+
   @ApiProperty({ example: 'Polín 45x48' })
   productName: string;
 

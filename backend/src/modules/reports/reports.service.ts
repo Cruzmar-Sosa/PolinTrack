@@ -290,6 +290,7 @@ export class ReportsService {
 
       switch (m.movementType) {
         case MovementType.PRODUCTION:
+        case MovementType.INITIAL_INVENTORY:
           stat.produced += delta;
           break;
         case MovementType.DISPATCH:
@@ -435,6 +436,7 @@ export class ReportsService {
         productionDate: r.productionDate.toISOString().split('T')[0],
         productionLot: r.productionLot,
         isoWeek: r.isoWeek,
+        isInitialInventory: (r as any).isInitialInventory ?? false,
         productName: pd.product?.name || (r as any).product?.name,
         dimensions: pd.product?.dimensions || (r as any).product?.dimensions,
         quantityProduced: pd.quantityProduced ?? (r as any).quantityProduced ?? 0,

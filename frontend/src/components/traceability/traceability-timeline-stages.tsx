@@ -16,6 +16,7 @@ import {
   Info,
   CheckCircle2,
   Building2,
+  Layers,
 } from 'lucide-react';
 import { formatDate } from '@/lib/date-formatters';
 import { TraceabilityData, OnDrillDownFn } from './types';
@@ -30,6 +31,9 @@ export function TraceabilityTimelineStages({
   data,
   onDrillDown,
 }: TraceabilityTimelineStagesProps) {
+  const isInitialInventoryLot =
+    data.production?.lot?.startsWith('INV-INI-') ||
+    (data.production as any)?.isInitialInventory === true;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -60,13 +64,30 @@ export function TraceabilityTimelineStages({
             <CardTitle className="text-xs text-slate-900 mt-1 flex items-center justify-between">
               <span>Lotes de Troza / Patio</span>
               <Badge variant="neutral" size="sm">
-                {data.rawMaterialOrigin?.length || 0}
+                {isInitialInventoryLot ? 'N/A' : (data.rawMaterialOrigin?.length || 0)}
               </Badge>
             </CardTitle>
           </CardHeader>
 
           <CardContent className="p-3.5 pt-3 flex-1 space-y-2.5">
-            {data.rawMaterialOrigin && data.rawMaterialOrigin.length > 0 ? (
+            {isInitialInventoryLot ? (
+              <div className="py-6 px-3.5 text-center rounded-xl bg-slate-50 border-2 border-dashed border-slate-300 space-y-2.5 my-auto">
+                <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center mx-auto">
+                  <Layers className="w-4 h-4 text-slate-700" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                    Origen de Lote: Inventario Inicial
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
+                    Este lote fue cargado como saldo base del sistema, por lo que carece de trazabilidad de materia prima o guía forestal previa.
+                  </p>
+                </div>
+                <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-semibold">
+                  No Aplica — Saldo Inicial
+                </span>
+              </div>
+            ) : data.rawMaterialOrigin && data.rawMaterialOrigin.length > 0 ? (
               data.rawMaterialOrigin.map((wood, idx) => (
                 <div
                   key={idx}

@@ -54,6 +54,41 @@ export class DailyProductionService {
   }
 
   /**
+   * Generates an initial inventory lot number INV-INI-DDMMYY-XX (TSK-PRD-INI).
+   *
+   * Format: INV-INI-DDMMYY-XX where:
+   *   - DDMMYY = registration date
+   *   - XX     = sequential suffix to avoid collisions on the same day
+   *
+   * @param productionDateStr Date formatted as YYYY-MM-DD
+   * @param tx Transaction client for counting existing initial inventory records
+   */
+  async generateInitialInventoryLot(
+    productionDateStr: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ productionLot: string; isoWeek: number }> {
+    const { isoWeek } = getISOWeek(productionDateStr);
+
+    const [year, month, day] = productionDateStr.split('-');
+    const shortYear = year.slice(2);
+    const datePart = `${day}${month}${shortYear}`;
+    const prefix = `INV-INI-${datePart}`;
+
+    // Count existing initial inventory records for this date to generate sequential suffix
+    const existingCount = await tx.dailyProduction.count({
+      where: {
+        isInitialInventory: true,
+        productionLot: { startsWith: prefix },
+      },
+    });
+
+    const suffix = String(existingCount + 1).padStart(2, '0');
+    const productionLot = `${prefix}-${suffix}`;
+
+    return { productionLot, isoWeek };
+  }
+
+  /**
    * Registers a daily finished product production order (UC-PRD-01).
    * Supports multiple products in a single header (TSK-20.2).
    *
@@ -68,6 +103,8 @@ export class DailyProductionService {
    * @param userId Authenticated user UUID from JWT
    */
   async create(dto: CreateDailyProductionDto, userId: string) {
+    const isInitialInventory = dto.isInitialInventory === true;
+
     // 1. Normalize items list (supports new array format and legacy single-product format)
     let items: ProductionProductItemDto[] = dto.products || [];
     if (items.length === 0 && dto.productId && dto.quantityProduced) {
@@ -141,7 +178,8 @@ export class DailyProductionService {
     const productsMap = new Map(products.map((p) => [p.id, p]));
 
     // 6. Validate wood receipts exist if specified (Traceability M:N)
-    if (dto.woodReceiptIds && dto.woodReceiptIds.length > 0) {
+    //    Skip validation when isInitialInventory=true (no raw material origin)
+    if (!isInitialInventory && dto.woodReceiptIds && dto.woodReceiptIds.length > 0) {
       const existingWood = await this.prisma.woodReceipt.findMany({
         where: { id: { in: dto.woodReceiptIds } },
         select: { id: true },
@@ -158,8 +196,10 @@ export class DailyProductionService {
 
     // 7. Atomic transaction boundary (ACID)
     return await this.prisma.$transaction(async (tx) => {
-      const { productionLot, isoWeek } =
-        await this.generateProductionLot(dto.productionDate, tx);
+      // TSK-PRD-INI: Generate appropriate lot number based on type
+      const { productionLot, isoWeek } = isInitialInventory
+        ? await this.generateInitialInventoryLot(dto.productionDate, tx)
+        : await this.generateProductionLot(dto.productionDate, tx);
 
       const productionDateObj = new Date(
         `${dto.productionDate}T00:00:00.000Z`,
@@ -179,6 +219,7 @@ export class DailyProductionService {
           isoWeek,
           productId: primaryProduct.productId,
           quantityProduced: totalQuantity,
+          isInitialInventory,
           createdById: userId,
         },
         include: {
@@ -198,7 +239,8 @@ export class DailyProductionService {
       });
 
       // Step C: Insert M:N referential wood receipt links (without merma, D-023, RN-015)
-      if (dto.woodReceiptIds && dto.woodReceiptIds.length > 0) {
+      //         Skip when isInitialInventory=true (no raw material origin)
+      if (!isInitialInventory && dto.woodReceiptIds && dto.woodReceiptIds.length > 0) {
         await tx.productionWoodReceipt.createMany({
           data: dto.woodReceiptIds.map((woodReceiptId) => ({
             dailyProductionId: dailyProduction.id,
@@ -209,11 +251,16 @@ export class DailyProductionService {
       }
 
       // Step D: Atomically record movement in append-only Inventory Ledger for EACH product (RN-010)
+      //         TSK-PRD-INI: Use INITIAL_INVENTORY movement type for initial stock baseline
+      const ledgerMovementType = isInitialInventory
+        ? MovementType.INITIAL_INVENTORY
+        : MovementType.PRODUCTION;
+
       for (const item of items) {
         await this.inventoryLedgerService.recordMovement(
           {
             productId: item.productId,
-            movementType: MovementType.PRODUCTION,
+            movementType: ledgerMovementType,
             quantity: item.quantityProduced,
             referenceTable: 'daily_productions',
             referenceId: dailyProduction.id,
@@ -232,9 +279,10 @@ export class DailyProductionService {
           newValues: {
             productionLot: dailyProduction.productionLot,
             isoWeek: dailyProduction.isoWeek,
+            isInitialInventory,
             productsCount: items.length,
             totalQuantityProduced: totalQuantity,
-            woodReceiptsLinked: dto.woodReceiptIds?.length || 0,
+            woodReceiptsLinked: isInitialInventory ? 0 : (dto.woodReceiptIds?.length || 0),
             products: items.map((i) => ({
               productId: i.productId,
               dimensions: productsMap.get(i.productId)?.dimensions,
@@ -270,7 +318,7 @@ export class DailyProductionService {
       );
 
       this.logger.log(
-        `[DailyProduction] Producción registrada: Lote=${dailyProduction.productionLot}, Productos=${items.length}, TotalPiezas=+${totalQuantity}`,
+        `[DailyProduction] ${isInitialInventory ? 'Inventario Inicial' : 'Producción'} registrada: Lote=${dailyProduction.productionLot}, Productos=${items.length}, TotalPiezas=+${totalQuantity}`,
       );
 
       return {
@@ -385,6 +433,7 @@ export class DailyProductionService {
         productionLot: item.productionLot,
         productionDate: item.productionDate,
         isoWeek: item.isoWeek,
+        isInitialInventory: (item as any).isInitialInventory ?? false,
         productionDetails: details,
         totalQuantityProduced: totalQuantity,
         // Compatibility properties for views
@@ -495,6 +544,7 @@ export class DailyProductionService {
         productionLot: item.productionLot,
         productionDate: item.productionDate,
         isoWeek: item.isoWeek,
+        isInitialInventory: (item as any).isInitialInventory ?? false,
         productionDetails: detailsWithStock,
         totalQuantityProduced: totalQuantity,
         // Compatibility properties

@@ -453,7 +453,159 @@ describe('DailyProductionService (Unit Tests)', () => {
     });
   });
 
-  describe('5. Immutability Guarantees (RN-001)', () => {
+  describe('5. Initial Inventory (TSK-PRD-INI)', () => {
+    it('creates initial inventory without woodReceiptIds and with INV-INI lot format', async () => {
+      prisma.product.findMany.mockResolvedValue([mockProduct1, mockProduct3]);
+      prisma.dailyProduction.count.mockResolvedValue(0); // No existing initial inventory for this date
+
+      const mockCreatedProduction = {
+        id: 'prod-order-inv-1',
+        productionLot: 'INV-INI-200926-01',
+        productionDate: new Date('2026-09-20T00:00:00.000Z'),
+        isoWeek: 38,
+        isInitialInventory: true,
+        createdBy: {
+          id: 'user-1',
+          fullName: 'Admin',
+          email: 'admin@polintrack.com',
+        },
+      };
+      prisma.dailyProduction.create.mockResolvedValue(mockCreatedProduction);
+
+      const mockDetails = [
+        {
+          id: 'detail-inv-1',
+          dailyProductionId: 'prod-order-inv-1',
+          productId: mockProduct1.id,
+          quantityProduced: 200,
+          product: mockProduct1,
+        },
+        {
+          id: 'detail-inv-2',
+          dailyProductionId: 'prod-order-inv-1',
+          productId: mockProduct3.id,
+          quantityProduced: 300,
+          product: mockProduct3,
+        },
+      ];
+      prisma.productionDetail.findMany.mockResolvedValue(mockDetails);
+
+      const result = await service.create(
+        {
+          productionDate: '2026-09-20',
+          isInitialInventory: true,
+          products: [
+            { productId: mockProduct1.id, quantityProduced: 200 },
+            { productId: mockProduct3.id, quantityProduced: 300 },
+          ],
+          // No woodReceiptIds - intentional for initial inventory
+        },
+        'user-1',
+      );
+
+      // Verify lot format is INV-INI, not LT-
+      expect(result.productionLot).toBe('INV-INI-200926-01');
+      expect(result.totalQuantityProduced).toBe(500);
+
+      // Verify isInitialInventory flag was set in create call
+      expect(prisma.dailyProduction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            isInitialInventory: true,
+          }),
+        }),
+      );
+
+      // Verify NO wood receipt links were inserted
+      expect(prisma.productionWoodReceipt.createMany).not.toHaveBeenCalled();
+
+      // Verify ledger was called with INITIAL_INVENTORY movement type
+      expect(ledgerService.recordMovement).toHaveBeenCalledTimes(2);
+      expect(ledgerService.recordMovement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          productId: mockProduct1.id,
+          movementType: MovementType.INITIAL_INVENTORY,
+          quantity: 200,
+          referenceTable: 'daily_productions',
+          referenceId: 'prod-order-inv-1',
+        }),
+        prisma,
+      );
+      expect(ledgerService.recordMovement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          productId: mockProduct3.id,
+          movementType: MovementType.INITIAL_INVENTORY,
+          quantity: 300,
+          referenceTable: 'daily_productions',
+          referenceId: 'prod-order-inv-1',
+        }),
+        prisma,
+      );
+
+      // Verify AuditLog was created with isInitialInventory flag
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tableName: 'daily_productions',
+          recordId: 'prod-order-inv-1',
+          action: 'INSERT',
+          newValues: expect.objectContaining({
+            isInitialInventory: true,
+          }),
+        }),
+      });
+    });
+
+    it('generates sequential lot suffix INV-INI-DDMMYY-02 when one already exists', async () => {
+      prisma.dailyProduction.count.mockResolvedValue(1); // 1 existing
+
+      const result = await service.generateInitialInventoryLot('2026-09-20', prisma);
+      expect(result.productionLot).toBe('INV-INI-200926-02');
+      expect(result.isoWeek).toBe(38);
+    });
+
+    it('regular production still uses PRODUCTION movement type', async () => {
+      prisma.product.findMany.mockResolvedValue([mockProduct1]);
+      prisma.dailyProduction.findUnique.mockResolvedValue(null);
+
+      const mockCreatedProduction = {
+        id: 'prod-order-regular',
+        productionLot: 'LT-200926-W38',
+        productionDate: new Date('2026-09-20T00:00:00.000Z'),
+        isoWeek: 38,
+        isInitialInventory: false,
+        createdBy: { id: 'user-1', fullName: 'Operador', email: 'op@polintrack.com' },
+      };
+      prisma.dailyProduction.create.mockResolvedValue(mockCreatedProduction);
+      prisma.productionDetail.findMany.mockResolvedValue([
+        {
+          id: 'detail-reg',
+          dailyProductionId: 'prod-order-regular',
+          productId: mockProduct1.id,
+          quantityProduced: 100,
+          product: mockProduct1,
+        },
+      ]);
+
+      await service.create(
+        {
+          productionDate: '2026-09-20',
+          isInitialInventory: false,
+          products: [{ productId: mockProduct1.id, quantityProduced: 100 }],
+        },
+        'user-1',
+      );
+
+      // Verify PRODUCTION (not INITIAL_INVENTORY) movement type used
+      expect(ledgerService.recordMovement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          movementType: MovementType.PRODUCTION,
+        }),
+        prisma,
+      );
+    });
+  });
+
+  describe('6. Immutability Guarantees (RN-001)', () => {
     it('service does not expose update or delete methods', () => {
       expect((service as any).update).toBeUndefined();
       expect((service as any).delete).toBeUndefined();
