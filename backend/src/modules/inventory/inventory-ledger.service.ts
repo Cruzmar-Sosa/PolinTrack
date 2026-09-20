@@ -206,7 +206,7 @@ export class InventoryLedgerService {
       }
       movementMap
         .get(group.productId)!
-        .set(group.movementType, group._sum.deltaQuantity ?? 0);
+        .set(group.movementType, group._sum?.deltaQuantity ?? 0);
     }
 
     // Map return groups by productId and destination
@@ -217,9 +217,9 @@ export class InventoryLedgerService {
       }
       const item = returnBreakdownMap.get(rg.productId)!;
       if (rg.destination === ReturnDestination.DESECHO) {
-        item.scrap += rg._sum.quantityReturned ?? 0;
+        item.scrap += rg._sum?.quantityReturned ?? 0;
       } else {
-        item.rework += rg._sum.quantityReturned ?? 0;
+        item.rework += rg._sum?.quantityReturned ?? 0;
       }
     }
 

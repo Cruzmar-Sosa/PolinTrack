@@ -263,9 +263,9 @@ export class ReportsService {
       }
       const item = returnBreakdownMap.get(rg.productId)!;
       if (rg.destination === 'DESECHO') {
-        item.scrap += rg._sum.quantityReturned ?? 0;
+        item.scrap += rg._sum?.quantityReturned ?? 0;
       } else {
-        item.rework += rg._sum.quantityReturned ?? 0;
+        item.rework += rg._sum?.quantityReturned ?? 0;
       }
     }
 
@@ -286,7 +286,7 @@ export class ReportsService {
         productStats.set(pId, { produced: 0, dispatched: 0, returned: 0, adjustments: 0 });
       }
       const stat = productStats.get(pId)!;
-      const delta = m._sum.deltaQuantity ?? 0;
+      const delta = m._sum?.deltaQuantity ?? 0;
 
       switch (m.movementType) {
         case MovementType.PRODUCTION:
