@@ -232,6 +232,14 @@ export default function InventoryPage() {
   const totalProduced = inventory.reduce((sum, p) => sum + (p.producedQuantity || 0), 0);
   const totalDispatched = inventory.reduce((sum, p) => sum + (p.dispatchedQuantity || 0), 0);
   const totalReturned = inventory.reduce((sum, p) => sum + (p.returnedQuantity || 0), 0);
+  const totalReturnedRework = inventory.reduce(
+    (sum, p) => sum + (p.totalReturnedRework ?? p.returnedQuantity ?? 0),
+    0,
+  );
+  const totalReturnedScrap = inventory.reduce(
+    (sum, p) => sum + (p.totalReturnedScrap || 0),
+    0,
+  );
   const totalAdjustments = inventory.reduce((sum, p) => sum + (p.adjustmentNetQuantity || 0), 0);
 
   return (
@@ -346,7 +354,7 @@ export default function InventoryPage() {
                   <Skeleton className="h-8 w-24 mt-1" />
                 ) : (
                   <h3 className="text-2xl font-black text-slate-900 font-mono mt-1">
-                    {totalReturned.toLocaleString()} <span className="text-xs font-normal text-slate-500">pcs</span>
+                    +{totalReturnedRework.toLocaleString()} <span className="text-xs font-normal text-slate-500">pcs</span>
                   </h3>
                 )}
               </div>
@@ -354,7 +362,14 @@ export default function InventoryPage() {
                 <ReturnIcon className="w-5 h-5" />
               </div>
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">Reincorporaciones de producto</p>
+            <div className="text-[11px] text-slate-500 mt-2 space-y-0.5 font-medium">
+              <span className="text-emerald-700 block">
+                Retorno a Patio (Reproceso): +{totalReturnedRework.toLocaleString()} pcs
+              </span>
+              <span className="text-rose-600 block">
+                Pérdida (Desecho): -{totalReturnedScrap.toLocaleString()} pcs
+              </span>
+            </div>
           </CardContent>
         </Card>
 
@@ -437,24 +452,25 @@ export default function InventoryPage() {
               </div>
             )}
 
-            <Table className="min-w-[950px]">
+            <Table className="min-w-[1050px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[280px]">Producto</TableHead>
                   <TableHead>Dimensiones</TableHead>
                   <TableHead className="text-right">Producido</TableHead>
                   <TableHead className="text-right">Despachado</TableHead>
-                  <TableHead className="text-right">Devuelto</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">DEVOLUCIONES: REPROCESO (+)</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">DEVOLUCIONES: DESECHO (-)</TableHead>
                   <TableHead className="text-right">Ajustes</TableHead>
                   <TableHead className="text-right w-[160px]">Stock Disponible</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoadingStock ? (
-                  <TableLoading colSpan={7} message="Calculando existencias en vivo desde PostgreSQL..." />
+                  <TableLoading colSpan={8} message="Calculando existencias en vivo desde PostgreSQL..." />
                 ) : inventory.length === 0 ? (
                   <TableEmpty
-                    colSpan={7}
+                    colSpan={8}
                     title="Sin productos en inventario"
                     message="No se encontraron productos registrados en el catálogo."
                   />
@@ -462,6 +478,8 @@ export default function InventoryPage() {
                   inventory.map((item) => {
                     const isZeroStock = item.availableStock === 0;
                     const isLowStock = item.availableStock > 0 && item.availableStock < 50;
+                    const reworkQty = item.totalReturnedRework ?? item.returnedQuantity ?? 0;
+                    const scrapQty = item.totalReturnedScrap ?? 0;
 
                     return (
                       <TableRow key={item.productId} className="hover:bg-slate-50/70 transition-colors">
@@ -479,41 +497,25 @@ export default function InventoryPage() {
                         <TableCell className="text-right font-mono text-slate-700 whitespace-nowrap">
                           -{item.dispatchedQuantity.toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {(() => {
-                            const reworkQty = item.totalReturnedRework ?? item.returnedQuantity ?? 0;
-                            const scrapQty = item.totalReturnedScrap ?? 0;
-
-                            if (reworkQty === 0 && scrapQty === 0) {
-                              return <span className="font-mono text-slate-400">0</span>;
-                            }
-
-                            return (
-                              <div className="flex flex-col gap-1 items-end">
-                                {/* Total general o Reproceso */}
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono text-emerald-600 font-bold">
-                                    +{reworkQty.toLocaleString()}
-                                  </span>
-                                  <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                                    Reproceso
-                                  </span>
-                                </div>
-
-                                {/* Desecho (Solo si existe > 0) */}
-                                {scrapQty > 0 && (
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="font-mono text-rose-600 font-bold">
-                                      {scrapQty.toLocaleString()}
-                                    </span>
-                                    <span className="text-[11px] font-semibold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                                      Desecho
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
+                        {/* CELDA 1: REPROCESO (+) */}
+                        <TableCell className="text-right align-middle whitespace-nowrap font-mono tabular-nums">
+                          {reworkQty > 0 ? (
+                            <span className="font-mono font-bold text-emerald-600">
+                              +{reworkQty.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">0</span>
+                          )}
+                        </TableCell>
+                        {/* CELDA 2: DESECHO (-) */}
+                        <TableCell className="text-right align-middle whitespace-nowrap font-mono tabular-nums">
+                          {scrapQty > 0 ? (
+                            <span className="font-mono font-bold text-rose-600">
+                              -{scrapQty.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">0</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono whitespace-nowrap">
                           {item.adjustmentNetQuantity > 0 ? (

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Param,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -15,7 +16,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TraceabilityService } from './traceability.service';
-import { QueryTraceabilityDto } from './dto/query-traceability.dto';
+import {
+  QueryTraceabilityDto,
+  TraceabilityQueryType,
+} from './dto/query-traceability.dto';
 import { TraceabilityResponseDto } from './dto/traceability-response.dto';
 
 @ApiTags('M09: Trazabilidad Transversal')
@@ -52,5 +56,41 @@ export class TraceabilityController {
   })
   async getTraceability(@Query() query: QueryTraceabilityDto) {
     return this.traceabilityService.getTraceability(query);
+  }
+
+  @Get(':lotId')
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD, RoleType.CONSULTA)
+  @ApiOperation({
+    summary:
+      'Consultar árbol genealógico completo por identificador directo (alias)',
+    description:
+      'Permite consultar la trazabilidad transversal pasando el identificador de lote de madera, producción o factura como parámetro de ruta.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Árbol genealógico transversal y grafo acíclico dirigido (DAG)',
+    type: TraceabilityResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Parámetros de búsqueda inválidos o faltantes',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado (Token JWT inválido o expirado)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'No se encontró ningún registro para el criterio especificado',
+  })
+  async getTraceabilityByLotId(
+    @Param('lotId') lotId: string,
+    @Query('queryType') queryType?: TraceabilityQueryType,
+  ) {
+    const type = queryType || TraceabilityQueryType.LOT_PRODUCTION;
+    return this.traceabilityService.getTraceability({
+      queryType: type,
+      queryValue: lotId,
+    });
   }
 }

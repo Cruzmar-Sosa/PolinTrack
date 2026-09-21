@@ -34,3 +34,22 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+@media print {
+  @page {
+    size: landscape; /* Fuerza el papel horizontal */
+    margin: 10mm 12mm; /* Márgenes limpios y aprovechables */
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: white !important;
+  }
+
+  /* Oculta forzosamente los contenedores principales de la App */
+  #dashboard-sidebar, 
+  #dashboard-topbar {
+    display: none !important;
+  }
+}

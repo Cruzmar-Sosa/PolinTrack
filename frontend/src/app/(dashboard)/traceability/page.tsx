@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   FileQuestion,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { TraceabilitySearchBar } from '@/components/traceability/traceability-search-bar';
 import { TraceabilityExecutiveBanner } from '@/components/traceability/traceability-executive-banner';
@@ -44,6 +45,7 @@ export default function TraceabilityPage() {
   const [queryValue, setQueryValue] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [data, setData] = useState<TraceabilityData | null>(null);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
@@ -54,16 +56,19 @@ export default function TraceabilityPage() {
   const handleSearch = async (type: TraceabilityQueryType, value: string) => {
     const trimmed = value.trim();
     if (!trimmed) {
+      setErrorStatus(400);
       setSearchError('Por favor ingrese un código de lote o número de factura válido.');
       return;
     }
     if (!token) {
+      setErrorStatus(401);
       setSearchError('Sesión no disponible o expirada. Inicie sesión nuevamente.');
       return;
     }
 
     setIsLoading(true);
     setSearchError(null);
+    setErrorStatus(null);
     setHasSearched(true);
 
     try {
@@ -72,12 +77,21 @@ export default function TraceabilityPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const json = await res.json();
+      let json: any = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+
       if (!res.ok) {
-        if (res.status === 404) {
-          setData(null);
+        setData(null);
+        setErrorStatus(res.status);
+        if (res.status === 403) {
+          setSearchError('No tiene permisos suficientes para consultar este lote.');
+        } else if (res.status === 404) {
           setSearchError(
-            `No se encontró ningún registro para '${trimmed}' (${
+            `Lote no encontrado o inexistente. No se encontró ningún registro para '${trimmed}' (${
               type === 'LOT_PRODUCTION'
                 ? 'Lote de Producción'
                 : type === 'LOT_WOOD'
@@ -86,17 +100,24 @@ export default function TraceabilityPage() {
             }). Verifique la nomenclatura e intente con otra consulta.`
           );
         } else {
-          throw new Error(json.message || `Error al consultar trazabilidad: HTTP ${res.status}`);
+          setSearchError(
+            json?.message || `Error al consultar trazabilidad: HTTP ${res.status}`
+          );
         }
-      } else if (json.success && json.data) {
+        return;
+      }
+
+      if (json && json.success && json.data) {
         setData(json.data);
       } else {
         setData(null);
+        setErrorStatus(500);
         setSearchError('Respuesta inesperada del motor de trazabilidad.');
       }
     } catch (err: any) {
       setData(null);
-      setSearchError(err.message || 'Error de conexión con el servidor.');
+      setErrorStatus(null);
+      setSearchError(err?.message || 'Ocurrió un problema de comunicación con el servidor.');
     } finally {
       setIsLoading(false);
     }
@@ -156,27 +177,33 @@ export default function TraceabilityPage() {
       {/* 3. ERROR & 404 FEEDBACK ALERTS                                      */}
       {/* ==================================================================== */}
       {searchError && (
-        <Alert variant="destructive" className="animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="font-bold text-sm">Registro no localizado o error de consulta</p>
-              <p className="text-xs text-rose-800">{searchError}</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchError(null);
-                  handleDrillDown('LOT_PRODUCTION', 'LT-070926-W37');
-                }}
-                className="text-xs bg-white text-rose-900 border-rose-300 hover:bg-rose-50"
-              >
-                Cargar lote de prueba
-              </Button>
-            </div>
+        <div className="flex flex-col items-center justify-center p-8 sm:p-12 bg-rose-50 border border-rose-200 rounded-xl text-center space-y-3 animate-in fade-in duration-200">
+          <AlertTriangle className="w-10 h-10 text-rose-500 mb-1" />
+          <h3 className="text-lg font-bold text-rose-900">
+            {errorStatus === 403
+              ? 'Acceso Restringido (403)'
+              : errorStatus === 404
+              ? 'Lote no encontrado o inexistente'
+              : 'Error al consultar Trazabilidad'}
+          </h3>
+          <p className="text-sm text-rose-700 max-w-lg leading-relaxed">
+            {searchError}
+          </p>
+          <div className="pt-2 flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchError(null);
+                setErrorStatus(null);
+                handleDrillDown('LOT_PRODUCTION', 'LT-070926-W37');
+              }}
+              className="text-xs bg-white text-rose-900 border-rose-300 hover:bg-rose-100 font-semibold"
+            >
+              Cargar lote de prueba (LT-070926-W37)
+            </Button>
           </div>
-        </Alert>
+        </div>
       )}
 
       {/* ==================================================================== */}

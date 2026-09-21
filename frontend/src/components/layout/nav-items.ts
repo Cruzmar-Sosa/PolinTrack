@@ -5,6 +5,7 @@ import {
   GitMerge,
   Hammer,
   LayoutDashboard,
+  LayoutList,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -19,6 +20,7 @@ export interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
+  allowedRoles?: ('ADMIN' | 'CONTABILIDAD' | 'CONSULTA')[];
 }
 
 export interface NavCluster {
@@ -109,7 +111,8 @@ export const NAVIGATION_CLUSTERS: NavCluster[] = [
       {
         name: 'Catálogos Fijos',
         href: '/settings/catalogs',
-        icon: Tags,
+        icon: LayoutList,
+        allowedRoles: ['ADMIN', 'CONTABILIDAD'],
       },
       {
         name: 'Usuarios & Roles',

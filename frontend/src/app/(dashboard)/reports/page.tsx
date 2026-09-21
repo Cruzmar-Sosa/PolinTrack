@@ -30,6 +30,7 @@ import { ReportsInventoryTable } from '@/components/reports/reports-inventory-ta
 import { ReportsProductionTable } from '@/components/reports/reports-production-table';
 import { ReportsFumigationsTable } from '@/components/reports/reports-fumigations-table';
 import { ReportsDistributionTable } from '@/components/reports/reports-distribution-table';
+import { PrintableReportTemplate, ColumnDef } from '@/components/reports/printable-report-template';
 import { formatDate, formatTime, formatDateTime, getTodayCalendarDate } from '@/lib/date-formatters';
 
 export default function ReportsPage() {
@@ -332,9 +333,8 @@ export default function ReportsPage() {
           'Dimensiones',
           'Total Producido (+)',
           'Total Despachado (-)',
-          'Retornado Reproceso (+Stock)',
-          'Retornado Desecho (0 Stock)',
-          'Total Retornado',
+          'Devoluciones (Reproceso)',
+          'Devoluciones (Desecho)',
           'Ajustes Netos (±)',
           'Stock Disponible en Patio',
         ];
@@ -343,9 +343,8 @@ export default function ReportsPage() {
           i.dimensions,
           i.totalProduced,
           i.totalDispatched,
-          i.totalReturnedRework ?? 0,
+          i.totalReturnedRework ?? i.totalReturned ?? 0,
           i.totalReturnedScrap ?? 0,
-          i.totalReturned,
           i.netAdjustments,
           i.currentAvailableStock,
         ]);
@@ -420,172 +419,426 @@ export default function ReportsPage() {
     return { filename, headers, rows };
   }, [activeTab, woodReceipts, dispatches, inventory, productions, fumigations, distributions]);
 
-  const tituloReporte = useMemo(() => {
+  const printableConfig = useMemo<{
+    reportTitle: string;
+    data: any[];
+    columns: ColumnDef[];
+    summaryMetrics?: React.ReactNode;
+  }>(() => {
     switch (activeTab) {
-      case 'wood-receipts':
-        return 'Reporte 1: Recepciones de Madera (M01)';
-      case 'dispatches':
-        return 'Reporte 2: Despachos a Centros de Distribución (M06)';
-      case 'inventory':
-        return 'Reporte 3: Balance Global de Inventario (M10)';
-      case 'daily-productions':
-        return 'Reporte 4: Producción Diaria de Polines (M04)';
-      case 'fumigations':
-        return 'Reporte 5: Certificados de Fumigación OIRSA (M05)';
-      case 'distribution-centers':
-        return 'Reporte 6: Resumen por Centro de Distribución (M06)';
+      case 'wood-receipts': {
+        const totalQty = woodReceipts.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+        return {
+          reportTitle: 'Reporte 1: Recepciones de Madera (M01)',
+          data: woodReceipts,
+          columns: [
+            { header: 'Fecha', render: (r: WoodReceiptReportItem) => formatDate(r.receiptDate) },
+            { header: 'Lote Recepción', accessorKey: 'lotNumber' },
+            { header: 'Proveedor', accessorKey: 'supplierName' },
+            { header: 'Especie', accessorKey: 'speciesName' },
+            { header: 'Tipo Madera', accessorKey: 'woodTypeName' },
+            { header: 'Unidad', accessorKey: 'unit' },
+            {
+              header: 'Cantidad',
+              render: (r: WoodReceiptReportItem) =>
+                Number(r.quantity).toLocaleString('es-NI', { maximumFractionDigits: 1 }),
+              align: 'right',
+            },
+            { header: 'Guía / Doc', render: (r: WoodReceiptReportItem) => r.guideNumber || '—' },
+            { header: 'Receptor', accessorKey: 'receivedBy' },
+          ],
+          summaryMetrics: (
+            <div className="flex justify-between items-center text-xs">
+              <span>Registros: <strong>{woodReceiptsMeta?.total ?? woodReceipts.length}</strong></span>
+              <span>Total Trozas / Unidades: <strong>{totalQty.toLocaleString('es-NI', { maximumFractionDigits: 1 })} pcs</strong></span>
+            </div>
+          ),
+        };
+      }
+
+      case 'dispatches': {
+        const totalDispatched = dispatches.reduce((sum, d) => sum + (Number(d.quantityDispatched) || 0), 0);
+        const totalReturned = dispatches.reduce((sum, d) => sum + (Number(d.quantityReturnedAccumulated) || 0), 0);
+        return {
+          reportTitle: 'Reporte 2: Despachos a Centros de Distribución (M06)',
+          data: dispatches,
+          columns: [
+            { header: 'Fecha', render: (r: DispatchReportItem) => formatDate(r.dispatchDate) },
+            { header: 'Factura / Remisión', accessorKey: 'invoiceNumber' },
+            { header: 'Centro Cliente', accessorKey: 'clientCenterName' },
+            { header: 'Lote Origen', render: (r: DispatchReportItem) => r.productionLot || '—' },
+            { header: 'Producto', accessorKey: 'productName' },
+            { header: 'Dimensiones', accessorKey: 'dimensions' },
+            {
+              header: 'Piezas Despachadas',
+              render: (r: DispatchReportItem) => `${Number(r.quantityDispatched).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Devoluciones',
+              render: (r: DispatchReportItem) => `${Number(r.quantityReturnedAccumulated).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            { header: 'Vehículo / Placa', render: (r: DispatchReportItem) => r.vehicleInfo || '—' },
+            { header: 'Conductor', render: (r: DispatchReportItem) => r.driverName || '—' },
+          ],
+          summaryMetrics: (
+            <div className="flex justify-between items-center text-xs">
+              <span>Registros: <strong>{dispatchesMeta?.total ?? dispatches.length}</strong></span>
+              <span>Total Despachado: <strong>{totalDispatched.toLocaleString('es-NI')} pcs</strong> | Total Devoluciones: <strong>{totalReturned.toLocaleString('es-NI')} pcs</strong></span>
+            </div>
+          ),
+        };
+      }
+
+      case 'inventory': {
+        return {
+          reportTitle: 'Reporte 3: Balance Global de Inventario (M10)',
+          data: inventory,
+          columns: [
+            { header: 'Producto Terminado', accessorKey: 'productName' },
+            { header: 'Dimensiones', accessorKey: 'dimensions' },
+            {
+              header: 'Producción (+)',
+              render: (r: InventoryReportItem) => `${Number(r.totalProduced).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Despachos (-)',
+              render: (r: InventoryReportItem) => `${Number(r.totalDispatched).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Devoluciones: Reproceso (+)',
+              render: (r: InventoryReportItem) => `+${Number(r.totalReturnedRework ?? r.totalReturned ?? 0).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Devoluciones: Desecho (-)',
+              render: (r: InventoryReportItem) => `-${Number(r.totalReturnedScrap ?? 0).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Ajustes Netos (±)',
+              render: (r: InventoryReportItem) => `${r.netAdjustments >= 0 ? '+' : ''}${Number(r.netAdjustments).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Stock Patio',
+              render: (r: InventoryReportItem) => `${Number(r.currentAvailableStock).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+          ],
+          summaryMetrics: inventorySummary ? (
+            <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
+              <span>Total Producido: <strong>{inventorySummary.totalProduced.toLocaleString('es-NI')} pcs</strong></span>
+              <span>Total Despachado: <strong>{inventorySummary.totalDispatched.toLocaleString('es-NI')} pcs</strong></span>
+              <span>Reproceso (+): <strong>{(inventorySummary.totalReturnedRework ?? 0).toLocaleString('es-NI')} pcs</strong></span>
+              <span>Desecho (-): <strong>{(inventorySummary.totalReturnedScrap ?? 0).toLocaleString('es-NI')} pcs</strong></span>
+              <span>Saldo Disponible Patio: <strong>{inventorySummary.totalAvailableStock.toLocaleString('es-NI')} pcs</strong></span>
+            </div>
+          ) : undefined,
+        };
+      }
+
+      case 'daily-productions': {
+        const totalProduced = productions.reduce((sum, p) => sum + (Number(p.quantityProduced) || 0), 0);
+        return {
+          reportTitle: 'Reporte 4: Producción Diaria de Polines (M04)',
+          data: productions,
+          columns: [
+            { header: 'Fecha', render: (r: DailyProductionReportItem) => formatDate(r.productionDate) },
+            { header: 'Lote Producción', accessorKey: 'productionLot' },
+            {
+              header: 'Tipo de Ingreso',
+              render: (r: DailyProductionReportItem) =>
+                r.isInitialInventory || r.productionLot?.startsWith('INV-INI-') ? (
+                  <strong className="font-bold text-black">INVENTARIO INICIAL</strong>
+                ) : (
+                  <span className="font-semibold text-slate-800">PRODUCCIÓN REGULAR</span>
+                ),
+              align: 'center',
+            },
+            { header: 'Semana ISO', render: (r: DailyProductionReportItem) => `W${r.isoWeek}`, align: 'center' },
+            { header: 'Producto', accessorKey: 'productName' },
+            { header: 'Dimensiones', accessorKey: 'dimensions' },
+            {
+              header: 'Piezas Producidas',
+              render: (r: DailyProductionReportItem) => `${Number(r.quantityProduced).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Lotes Madera Origen',
+              render: (r: DailyProductionReportItem) =>
+                r.woodReceiptLots && r.woodReceiptLots.length > 0 ? r.woodReceiptLots.join(', ') : 'No vinculado',
+            },
+            {
+              header: 'Supervisor',
+              render: (r: DailyProductionReportItem) => r.supervisor || (r as any).createdByName || (r as any).supervisorName || '—',
+            },
+          ],
+          summaryMetrics: (
+            <div className="flex justify-between items-center text-xs">
+              <span>Registros: <strong>{productionsMeta?.total ?? productions.length}</strong></span>
+              <span>Total Producido: <strong>{totalProduced.toLocaleString('es-NI')} pcs</strong></span>
+            </div>
+          ),
+        };
+      }
+
+      case 'fumigations': {
+        return {
+          reportTitle: 'Reporte 5: Certificados de Fumigación OIRSA (M05)',
+          data: fumigations,
+          columns: [
+            { header: 'Fecha', render: (r: FumigationReportItem) => formatDate(r.fumigationDate) },
+            { header: 'Hora', render: (r: FumigationReportItem) => formatTime(r.fumigationTime) },
+            { header: 'Certificado OIRSA', accessorKey: 'certificateNumber' },
+            {
+              header: 'Lote(s) Tratado(s)',
+              render: (r: FumigationReportItem) =>
+                r.productionLots && r.productionLots.length > 0
+                  ? r.productionLots.join(', ')
+                  : r.productionLot || '—',
+            },
+            {
+              header: 'Productos Tratados',
+              render: (r: FumigationReportItem) =>
+                r.treatedProducts && r.treatedProducts.length > 0
+                  ? r.treatedProducts.join(', ')
+                  : 'Todos',
+            },
+            {
+              header: 'Cantidad Fumigada',
+              render: (r: FumigationReportItem) =>
+                r.totalQuantityFumigated != null
+                  ? `${Number(r.totalQuantityFumigated).toLocaleString('es-NI')} pcs`
+                  : '—',
+              align: 'right',
+            },
+            { header: 'Archivo PDF', render: (r: FumigationReportItem) => r.pdfFileName || '—' },
+            { header: 'Registrado Por', accessorKey: 'registeredBy' },
+          ],
+          summaryMetrics: (
+            <div className="text-xs">
+              <span>Registros Certificados: <strong>{fumigationsMeta?.total ?? fumigations.length}</strong></span>
+            </div>
+          ),
+        };
+      }
+
+      case 'distribution-centers': {
+        const totalNet = distributions.reduce((sum, c) => sum + (Number(c.netDelivered) || 0), 0);
+        return {
+          reportTitle: 'Reporte 6: Resumen por Centro de Distribución (M06)',
+          data: distributions,
+          columns: [
+            { header: 'Centro Cliente', accessorKey: 'clientCenterName' },
+            { header: 'Facturas', accessorKey: 'invoicesCount', align: 'center' },
+            {
+              header: 'Total Despachado',
+              render: (r: DistributionCenterReportItem) => `${Number(r.totalDispatched).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Total Devoluciones (-)',
+              render: (r: DistributionCenterReportItem) => `-${Number(r.totalReturned).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Saldo Neto Entregado',
+              render: (r: DistributionCenterReportItem) => `${Number(r.netDelivered).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
+              header: 'Participación',
+              render: (r: DistributionCenterReportItem) => {
+                return totalNet > 0
+                  ? `${Math.round((r.netDelivered / totalNet) * 100)}%`
+                  : '0%';
+              },
+              align: 'right',
+            },
+          ],
+          summaryMetrics: distributionSummary ? (
+            <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
+              <span>Plantas: <strong>{distributions.length}</strong></span>
+              <span>Total Despachado: <strong>{distributionSummary.totalDispatched.toLocaleString('es-NI')} pcs</strong></span>
+              <span>Total Devoluciones: <strong>-{distributionSummary.totalReturned.toLocaleString('es-NI')} pcs</strong></span>
+              <span>Saldo Neto Entregado: <strong>{distributionSummary.netDelivered.toLocaleString('es-NI')} pcs</strong></span>
+            </div>
+          ) : undefined,
+        };
+      }
+
       default:
-        return 'Reporte Oficial';
+        return {
+          reportTitle: 'Reporte Oficial PolinTrack',
+          data: [],
+          columns: [],
+        };
     }
-  }, [activeTab]);
+  }, [
+    activeTab,
+    woodReceipts,
+    woodReceiptsMeta,
+    dispatches,
+    dispatchesMeta,
+    inventory,
+    inventorySummary,
+    productions,
+    productionsMeta,
+    fumigations,
+    fumigationsMeta,
+    distributions,
+    distributionSummary,
+  ]);
 
   return (
-    <div className="space-y-6 pb-20 max-w-7xl mx-auto print:max-w-none print:w-full print:p-0 print:m-0 print:pb-0">
-      {/* ==================================================================== */}
-      {/* 0. PRINT-ONLY OFFICIAL LETTERHEAD                                   */}
-      {/* ==================================================================== */}
-      <div className="hidden print:block mb-6 border-b-2 border-slate-800 pb-4">
-        <div className="flex justify-between items-end">
+    <>
+      {/* 🌳 ÁRBOL 1: UI INTERACTIVA (Oculto al imprimir) */}
+      <div className="print:hidden w-full h-full flex flex-col space-y-6 pb-20 max-w-7xl mx-auto">
+        {/* ==================================================================== */}
+        {/* 1. HEADER ROW                                                       */}
+        {/* ==================================================================== */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-black uppercase tracking-wider">PolinTrack ERP</h1>
-            <h2 className="text-lg font-semibold text-slate-700">{tituloReporte}</h2>
+            <div className="flex items-center gap-2.5">
+              <PageTitle>Centro de Reportes Oficiales</PageTitle>
+              <Badge variant="default" size="sm" className="bg-[#1D71CB] text-white">
+                6 Reportes de Planta (M10)
+              </Badge>
+            </div>
+            <MutedText>
+              Generación analítica, balance operacional, exportación a CSV e impresión limpia con validación estricta de fechas (RN-007).
+            </MutedText>
           </div>
-          <div className="text-right text-xs text-slate-600">
-            <p>Generado el: {formatDateTime(new Date()).full}</p>
-            <p>Usuario: {user?.fullName || 'Usuario PolinTrack'}</p>
-          </div>
-        </div>
-      </div>
 
-      {/* ==================================================================== */}
-      {/* 1. HEADER ROW                                                       */}
-      {/* ==================================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4 print:hidden">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <PageTitle>Centro de Reportes Oficiales</PageTitle>
-            <Badge variant="default" size="sm" className="bg-[#1D71CB] text-white">
-              6 Reportes de Planta (M10)
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Badge variant="neutral" size="sm">
+              Modo Consulta Read-Only
             </Badge>
+            <span className="text-xs font-mono text-slate-500 font-semibold px-2.5 py-1 rounded bg-slate-100 border border-slate-200">
+              {role || 'Usuario'}
+            </span>
           </div>
-          <MutedText>
-            Generación analítica, balance operacional, exportación a CSV e impresión limpia con validación estricta de fechas (RN-007).
-          </MutedText>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto print:hidden">
-          <Badge variant="neutral" size="sm">
-            Modo Consulta Read-Only
-          </Badge>
-          <span className="text-xs font-mono text-slate-500 font-semibold px-2.5 py-1 rounded bg-slate-100 border border-slate-200">
-            {role || 'Usuario'}
-          </span>
-        </div>
+        {/* ==================================================================== */}
+        {/* 2. TABS & GLOBAL FILTER BAR                                         */}
+        {/* ==================================================================== */}
+        <ReportsFilterBar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onApplyFilters={fetchActiveReport}
+          onResetFilters={handleResetFilters}
+          isLoading={isLoading}
+          exportFilename={exportConfig.filename}
+          exportHeaders={exportConfig.headers}
+          exportRows={exportConfig.rows}
+          token={token}
+          apiUrl={apiUrl}
+        />
+
+        {/* ERROR ALERT */}
+        {errorMessage && (
+          <Alert variant="destructive" className="animate-in fade-in duration-200">
+            <p className="text-xs font-semibold">{errorMessage}</p>
+          </Alert>
+        )}
+
+        {/* ==================================================================== */}
+        {/* 3. LOADING SKELETON                                                  */}
+        {/* ==================================================================== */}
+        {isLoading && (
+          <div className="space-y-4">
+            <Skeleton className="h-16 rounded-xl w-full" />
+            <Skeleton className="h-96 rounded-xl w-full" />
+          </div>
+        )}
+
+        {/* ==================================================================== */}
+        {/* 4. ACTIVE REPORT TABLE (SCR-REP-01..06)                              */}
+        {/* ==================================================================== */}
+        {!isLoading && (
+          <div className="animate-in fade-in duration-200">
+            {activeTab === 'wood-receipts' && (
+              <ReportsWoodReceiptsTable
+                data={woodReceipts}
+                meta={woodReceiptsMeta}
+                onPageChange={(p) => handleFilterChange({ page: p })}
+                onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
+                pageSize={filters.limit}
+                isLoading={isLoading}
+              />
+            )}
+
+            {activeTab === 'dispatches' && (
+              <ReportsDispatchesTable
+                data={dispatches}
+                meta={dispatchesMeta}
+                onPageChange={(p) => handleFilterChange({ page: p })}
+                onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
+                pageSize={filters.limit}
+                isLoading={isLoading}
+              />
+            )}
+
+            {activeTab === 'inventory' && (
+              <ReportsInventoryTable
+                data={inventory}
+                summary={inventorySummary}
+                isLoading={isLoading}
+              />
+            )}
+
+            {activeTab === 'daily-productions' && (
+              <ReportsProductionTable
+                data={productions}
+                meta={productionsMeta}
+                onPageChange={(p) => handleFilterChange({ page: p })}
+                onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
+                pageSize={filters.limit}
+                isLoading={isLoading}
+              />
+            )}
+
+            {activeTab === 'fumigations' && (
+              <ReportsFumigationsTable
+                data={fumigations}
+                meta={fumigationsMeta}
+                onPageChange={(p) => handleFilterChange({ page: p })}
+                onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
+                pageSize={filters.limit}
+                isLoading={isLoading}
+                token={token}
+                apiUrl={apiUrl}
+              />
+            )}
+
+            {activeTab === 'distribution-centers' && (
+              <ReportsDistributionTable
+                data={distributions}
+                summary={distributionSummary}
+                isLoading={isLoading}
+              />
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ==================================================================== */}
-      {/* 2. TABS & GLOBAL FILTER BAR                                         */}
-      {/* ==================================================================== */}
-      <ReportsFilterBar
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        onApplyFilters={fetchActiveReport}
-        onResetFilters={handleResetFilters}
-        isLoading={isLoading}
-        exportFilename={exportConfig.filename}
-        exportHeaders={exportConfig.headers}
-        exportRows={exportConfig.rows}
-        token={token}
-        apiUrl={apiUrl}
-      />
-
-      {/* ERROR ALERT */}
-      {errorMessage && (
-        <Alert variant="destructive" className="animate-in fade-in duration-200">
-          <p className="text-xs font-semibold">{errorMessage}</p>
-        </Alert>
-      )}
-
-      {/* ==================================================================== */}
-      {/* 3. LOADING SKELETON                                                  */}
-      {/* ==================================================================== */}
-      {isLoading && (
-        <div className="space-y-4">
-          <Skeleton className="h-16 rounded-xl w-full" />
-          <Skeleton className="h-96 rounded-xl w-full" />
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* 4. ACTIVE REPORT TABLE (SCR-REP-01..06)                              */}
-      {/* ==================================================================== */}
-      {!isLoading && (
-        <div className="animate-in fade-in duration-200">
-          {activeTab === 'wood-receipts' && (
-            <ReportsWoodReceiptsTable
-              data={woodReceipts}
-              meta={woodReceiptsMeta}
-              onPageChange={(p) => handleFilterChange({ page: p })}
-              onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
-              pageSize={filters.limit}
-              isLoading={isLoading}
-            />
-          )}
-
-          {activeTab === 'dispatches' && (
-            <ReportsDispatchesTable
-              data={dispatches}
-              meta={dispatchesMeta}
-              onPageChange={(p) => handleFilterChange({ page: p })}
-              onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
-              pageSize={filters.limit}
-              isLoading={isLoading}
-            />
-          )}
-
-          {activeTab === 'inventory' && (
-            <ReportsInventoryTable
-              data={inventory}
-              summary={inventorySummary}
-              isLoading={isLoading}
-            />
-          )}
-
-          {activeTab === 'daily-productions' && (
-            <ReportsProductionTable
-              data={productions}
-              meta={productionsMeta}
-              onPageChange={(p) => handleFilterChange({ page: p })}
-              onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
-              pageSize={filters.limit}
-              isLoading={isLoading}
-            />
-          )}
-
-          {activeTab === 'fumigations' && (
-            <ReportsFumigationsTable
-              data={fumigations}
-              meta={fumigationsMeta}
-              onPageChange={(p) => handleFilterChange({ page: p })}
-              onPageSizeChange={(newSize) => handleFilterChange({ limit: newSize, page: 1 })}
-              pageSize={filters.limit}
-              isLoading={isLoading}
-              token={token}
-              apiUrl={apiUrl}
-            />
-          )}
-
-          {activeTab === 'distribution-centers' && (
-            <ReportsDistributionTable
-              data={distributions}
-              summary={distributionSummary}
-              isLoading={isLoading}
-            />
-          )}
-        </div>
-      )}
-    </div>
+      {/* 🌳 ÁRBOL 2: DOCUMENTO DE IMPRESIÓN (Visible SOLO al imprimir) */}
+      <div className="hidden print:block print:w-full print:bg-white text-black">
+        <PrintableReportTemplate
+          reportTitle={printableConfig.reportTitle}
+          data={printableConfig.data}
+          columns={printableConfig.columns}
+          userFullName={user?.fullName || 'Usuario PolinTrack'}
+          summaryMetrics={printableConfig.summaryMetrics}
+        />
+      </div>
+    </>
   );
 }

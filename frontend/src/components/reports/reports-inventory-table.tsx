@@ -45,13 +45,16 @@ export function ReportsInventoryTable({
               Total Reincorporado (+)
             </span>
             <span className="text-xl font-black font-mono tabular-nums text-emerald-800 mt-0.5 block">
-              +{summary.totalReturned.toLocaleString('es-NI')} pcs
+              +{(summary.totalReturnedRework ?? summary.totalReturned).toLocaleString('es-NI')} pcs
             </span>
-            {(summary.totalReturnedRework !== undefined || summary.totalReturnedScrap !== undefined) && (
-              <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">
-                {summary.totalReturnedRework ?? 0} Reproceso · {summary.totalReturnedScrap ?? 0} Desecho
+            <div className="text-[10px] block mt-1 font-medium space-y-0.5">
+              <span className="text-emerald-700 block">
+                Retorno a Patio (Reproceso): +{(summary.totalReturnedRework ?? summary.totalReturned).toLocaleString('es-NI')} pcs
               </span>
-            )}
+              <span className="text-rose-600 block">
+                Pérdida (Desecho): -{(summary.totalReturnedScrap ?? 0).toLocaleString('es-NI')} pcs
+              </span>
+            </div>
           </div>
 
           <div className="p-3 bg-slate-900 text-white rounded-xl border border-slate-800 shadow-xs print:bg-slate-100 print:text-slate-900 print:border-slate-300">
@@ -93,14 +96,15 @@ export function ReportsInventoryTable({
 
         <CardContent className="p-0">
           <div className="overflow-x-auto print:overflow-visible w-full">
-            <table className="w-full text-xs text-left min-w-[950px] print:min-w-0 print:w-full print:text-[11px] md:print:text-xs">
+            <table className="w-full text-xs text-left min-w-[1050px] print:min-w-0 print:w-full print:text-[11px] md:print:text-xs">
               <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-4 whitespace-nowrap">Producto Terminado</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">Dimensiones</th>
                   <th className="py-2.5 px-4 text-right whitespace-nowrap">Producción (+)</th>
                   <th className="py-2.5 px-4 text-right whitespace-nowrap">Despachos (-)</th>
-                  <th className="py-2.5 px-4 text-right whitespace-nowrap">Devoluciones (+)</th>
+                  <th className="py-2.5 px-3 text-right whitespace-nowrap">DEVOLUCIONES: REPROCESO (+)</th>
+                  <th className="py-2.5 px-3 text-right whitespace-nowrap">DEVOLUCIONES: DESECHO (-)</th>
                   <th className="py-2.5 px-4 text-right whitespace-nowrap">Ajustes Netos (±)</th>
                   <th className="py-2.5 px-4 text-right whitespace-nowrap">Stock Disponible en Patio</th>
                   <th className="py-2.5 px-3 text-center whitespace-nowrap">Nivel</th>
@@ -128,30 +132,28 @@ export function ReportsInventoryTable({
                         <td className="py-2.5 px-4 font-mono text-right tabular-nums text-amber-900 whitespace-nowrap">
                           {item.totalDispatched.toLocaleString('es-NI')}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-right tabular-nums text-emerald-800 whitespace-nowrap">
-                          {reworkQty === 0 && scrapQty === 0 ? (
-                            <span className="text-slate-400">0</span>
-                          ) : (
-                            <div className="flex flex-col gap-1 items-end">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-emerald-600 font-bold">
-                                  +{reworkQty.toLocaleString('es-NI')}
-                                </span>
-                                <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                                  Reproceso
-                                </span>
-                              </div>
-                              {scrapQty > 0 && (
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="font-mono text-rose-600 font-bold">
-                                    {scrapQty.toLocaleString('es-NI')}
-                                  </span>
-                                  <span className="text-[10px] font-semibold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                                    Desecho
-                                  </span>
-                                </div>
-                              )}
+                        {/* CELDA 1: REPROCESO (+) */}
+                        <td className="py-2.5 px-3 text-right align-middle whitespace-nowrap font-mono tabular-nums">
+                          {reworkQty > 0 ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="font-mono font-bold text-emerald-600">
+                                +{reworkQty.toLocaleString('es-NI')}
+                              </span>
                             </div>
+                          ) : (
+                            <span className="text-slate-300 font-mono">0</span>
+                          )}
+                        </td>
+                        {/* CELDA 2: DESECHO (-) */}
+                        <td className="py-2.5 px-3 text-right align-middle whitespace-nowrap font-mono tabular-nums">
+                          {scrapQty > 0 ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="font-mono font-bold text-rose-600">
+                                -{scrapQty.toLocaleString('es-NI')}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 font-mono">0</span>
                           )}
                         </td>
                         <td className="py-2.5 px-4 font-mono text-right tabular-nums text-slate-600 whitespace-nowrap">
@@ -184,7 +186,7 @@ export function ReportsInventoryTable({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400 italic">
+                    <td colSpan={9} className="py-12 text-center text-slate-400 italic">
                       No se encontraron productos en el inventario consolidado
                     </td>
                   </tr>

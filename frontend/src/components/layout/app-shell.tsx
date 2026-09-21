@@ -16,7 +16,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen flex bg-[#F8FAFC] print:bg-white print:min-h-0 print:h-auto print:block">
       {/* 1. Sidebar Fijo de Escritorio (>=1024px) */}
-      <div className="print:hidden">
+      <div id="dashboard-sidebar" className="print:hidden">
         <Sidebar isCollapsed={isSidebarCollapsed} />
       </div>
 
@@ -30,7 +30,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* 3. Área de Contenido Principal + Header Superior */}
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 print:w-full print:block print:m-0 print:p-0">
-        <div className="print:hidden">
+        <div id="dashboard-topbar" className="print:hidden">
           <Header
             isSidebarCollapsed={isSidebarCollapsed}
             onToggleSidebarCollapse={() =>

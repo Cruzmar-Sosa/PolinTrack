@@ -95,6 +95,9 @@ export function MobileDrawer({ isOpen, onClose }: MobileDrawerProps) {
               if (item.adminOnly) {
                 return user?.role === 'ADMIN';
               }
+              if (item.allowedRoles) {
+                return !!user?.role && item.allowedRoles.includes(user.role);
+              }
               return true;
             });
 

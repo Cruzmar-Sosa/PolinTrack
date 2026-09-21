@@ -123,13 +123,13 @@ export class CatalogsController {
   }
 
   @Put('wood-types/:id')
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
   @ApiOperation({
-    summary: 'Actualizar tipo de madera (ADMIN)',
-    description: 'Exclusivo para ADMIN. Permite actualizar descripción, unidad por defecto y estado.',
+    summary: 'Actualizar tipo de madera (ADMIN, CONTABILIDAD)',
+    description: 'Permite actualizar descripción, unidad por defecto y estado operativo.',
   })
   @ApiResponse({ status: 200, description: 'Tipo de madera actualizado' })
-  @ApiResponse({ status: 403, description: 'Acceso denegado (Requiere ADMIN)' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado (Requiere ADMIN o CONTABILIDAD)' })
   async updateWoodType(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateWoodTypeDto,
@@ -140,13 +140,13 @@ export class CatalogsController {
   }
 
   @Patch('wood-types/:id/status')
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
   @ApiOperation({
-    summary: 'Activar o desactivar tipo de madera (ADMIN)',
-    description: 'Exclusivo para ADMIN. Conmuta el estado operativo.',
+    summary: 'Activar o desactivar tipo de madera (ADMIN, CONTABILIDAD)',
+    description: 'Conmuta el estado operativo sin borrar registros históricos.',
   })
   @ApiResponse({ status: 200, description: 'Estado actualizado' })
-  @ApiResponse({ status: 403, description: 'Acceso denegado (Requiere ADMIN)' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado (Requiere ADMIN o CONTABILIDAD)' })
   async updateWoodTypeStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateStatusDto,

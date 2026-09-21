@@ -53,10 +53,13 @@ export function Sidebar({ isCollapsed }: SidebarProps) {
       {/* 2. Navegación en 5 Clusters con RBAC */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
         {NAVIGATION_CLUSTERS.map((cluster) => {
-          // Filtrar elementos según el rol del usuario (exclusivo ADMIN para ajustes y usuarios)
+          // Filtrar elementos según el rol del usuario (RBAC: adminOnly o allowedRoles específicos)
           const visibleItems = cluster.items.filter((item) => {
             if (item.adminOnly) {
               return user?.role === 'ADMIN';
+            }
+            if (item.allowedRoles) {
+              return !!user?.role && item.allowedRoles.includes(user.role);
             }
             return true;
           });
