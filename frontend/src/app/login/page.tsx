@@ -26,6 +26,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setErrorMessage(null);
 
     const cleanEmail = email.trim();
@@ -195,12 +196,12 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3 px-4 bg-action hover:bg-action-hover active:bg-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-150 flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 bg-[#1D71CB] hover:bg-[#165EA8] active:bg-[#144B84] text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#1D71CB] focus-visible:ring-offset-2 outline-none transition-all duration-150 flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verificando credenciales...</span>
+                    <span>Validando...</span>
                   </>
                 ) : (
                   <span>Iniciar Sesión</span>
