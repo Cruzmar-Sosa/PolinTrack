@@ -29,6 +29,7 @@ import {
   DispatchHeaderResponseDto,
   PaginatedDispatchResponseDto,
 } from './dto/dispatch-response.dto';
+import { CorrectDispatchDto } from './dto/correct-dispatch.dto';
 
 @ApiTags('M07: Salidas / Despachos')
 @ApiBearerAuth()
@@ -110,5 +111,52 @@ export class DispatchesController {
   })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.dispatchesService.findOne(id);
+  }
+
+  @Get(':id/corrections-context')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Obtener contexto y límites permitidos antes de editar cantidades de un despacho',
+    description:
+      'Retorna líneas de despacho con cantidades devueltas acumuladas, mínimo permitido y stock disponible en almacén.',
+  })
+  @ApiResponse({ status: 200, description: 'Contexto obtenido con éxito' })
+  @ApiResponse({ status: 403, description: 'No autorizado para CONSULTA' })
+  async getCorrectionContext(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dispatchesService.getCorrectionContext(id);
+  }
+
+  @Post(':id/corrections')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Corregir cantidades de una factura/remisión de despacho (Auditable)',
+    description:
+      'Modifica cantidades despachadas de líneas existentes. Valida no reducir por debajo de devoluciones ya registradas y disponibilidad en almacén si incrementa. Emite movimientos compensatorios en ledger (MovementType.CORRECTION) y auditoría inmutable.',
+  })
+  @ApiResponse({ status: 200, description: 'Corrección de despacho aplicada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Cantidad inválida o inferior a devoluciones' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado para CONSULTA' })
+  async correctQuantity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectDispatchDto,
+    @CurrentUser() user: any,
+  ) {
+    const userId = user?.id || user?.sub;
+    return this.dispatchesService.correctQuantity(id, dto, userId);
+  }
+
+  @Get(':id/corrections')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD, RoleType.CONSULTA)
+  @ApiOperation({
+    summary: 'Consultar historial de correcciones de una factura de despacho',
+    description: 'Retorna el historial inmutable de correcciones, actor, fecha, deltas y líneas afectadas.',
+  })
+  @ApiResponse({ status: 200, description: 'Historial de correcciones encontrado' })
+  async getCorrections(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dispatchesService.getCorrections(id);
   }
 }

@@ -277,13 +277,14 @@ export class ReportsService {
         dispatched: number;
         returned: number;
         adjustments: number;
+        corrections: number;
       }
     >();
 
     for (const m of movements) {
       const pId = m.productId;
       if (!productStats.has(pId)) {
-        productStats.set(pId, { produced: 0, dispatched: 0, returned: 0, adjustments: 0 });
+        productStats.set(pId, { produced: 0, dispatched: 0, returned: 0, adjustments: 0, corrections: 0 });
       }
       const stat = productStats.get(pId)!;
       const delta = m._sum?.deltaQuantity ?? 0;
@@ -302,6 +303,9 @@ export class ReportsService {
         case MovementType.ADJUSTMENT:
           stat.adjustments += delta;
           break;
+        case MovementType.CORRECTION:
+          stat.corrections += delta;
+          break;
       }
     }
 
@@ -310,6 +314,8 @@ export class ReportsService {
     let summaryReturned = 0;
     let summaryReturnedRework = 0;
     let summaryReturnedScrap = 0;
+    let summaryAdjustments = 0;
+    let summaryCorrections = 0;
     let summaryAvailable = 0;
 
     const data = products.map((p) => {
@@ -318,6 +324,7 @@ export class ReportsService {
         dispatched: 0,
         returned: 0,
         adjustments: 0,
+        corrections: 0,
       };
 
       const returnBreakdown = returnBreakdownMap.get(p.id) ?? { rework: 0, scrap: 0 };
@@ -326,13 +333,15 @@ export class ReportsService {
       const totalReturned = totalReturnedRework + totalReturnedScrap;
 
       const currentAvailableStock =
-        stats.produced - stats.dispatched + stats.returned + stats.adjustments;
+        stats.produced - stats.dispatched + stats.returned + stats.adjustments + stats.corrections;
 
       summaryProduced += stats.produced;
       summaryDispatched += stats.dispatched;
       summaryReturned += totalReturned;
       summaryReturnedRework += totalReturnedRework;
       summaryReturnedScrap += totalReturnedScrap;
+      summaryAdjustments += stats.adjustments;
+      summaryCorrections += stats.corrections;
       summaryAvailable += currentAvailableStock;
 
       return {
@@ -345,6 +354,7 @@ export class ReportsService {
         totalReturnedRework,
         totalReturnedScrap,
         netAdjustments: stats.adjustments,
+        netCorrections: stats.corrections,
         currentAvailableStock,
       };
     });
@@ -358,6 +368,8 @@ export class ReportsService {
         totalReturned: summaryReturned,
         totalReturnedRework: summaryReturnedRework,
         totalReturnedScrap: summaryReturnedScrap,
+        totalAdjustments: summaryAdjustments,
+        totalCorrections: summaryCorrections,
         totalAvailableStock: summaryAvailable,
       },
     };

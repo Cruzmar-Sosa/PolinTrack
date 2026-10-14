@@ -170,6 +170,9 @@ export class InventoryReportItemDto {
   @ApiProperty({ example: 50 })
   netAdjustments: number;
 
+  @ApiPropertyOptional({ example: 0 })
+  netCorrections?: number;
+
   @ApiProperty({ example: 1750 })
   currentAvailableStock: number;
 }
@@ -197,6 +200,8 @@ export class InventoryReportResponseDto {
     totalReturned: number;
     totalReturnedRework?: number;
     totalReturnedScrap?: number;
+    totalAdjustments?: number;
+    totalCorrections?: number;
     totalAvailableStock: number;
   };
 }

@@ -123,6 +123,23 @@ export class InventoryLedgerService {
         break;
       }
 
+      case MovementType.CORRECTION: {
+        // Compensatory movement for auditable quantity correction: signed delta (+/-N)
+        const isDecrement = isAdjustmentDecrement ?? (quantity < 0);
+        deltaQuantity = isDecrement ? -Math.abs(quantity) : Math.abs(quantity);
+
+        if (isDecrement) {
+          const currentStock = await this.getAvailableStock(productId, client);
+          if (currentStock < Math.abs(deltaQuantity)) {
+            throw new BadRequestException({
+              code: 'INSUFFICIENT_STOCK',
+              message: `El decremento por corrección (${Math.abs(deltaQuantity)}) excede el stock disponible actual (${currentStock})`,
+            });
+          }
+        }
+        break;
+      }
+
       default:
         throw new BadRequestException({
           code: 'INVALID_MOVEMENT_TYPE',
@@ -232,14 +249,15 @@ export class InventoryLedgerService {
       const dispatched = Math.abs(dispatchedRaw);
       const returnedReworkLedger = prodMovements?.get(MovementType.RETURN) ?? 0;
       const adjustment = prodMovements?.get(MovementType.ADJUSTMENT) ?? 0;
+      const correction = prodMovements?.get(MovementType.CORRECTION) ?? 0;
 
       const returnBreakdown = returnBreakdownMap.get(prod.id) ?? { rework: 0, scrap: 0 };
       const totalReturnedRework = returnBreakdown.rework || returnedReworkLedger;
       const totalReturnedScrap = returnBreakdown.scrap;
       const totalReturned = totalReturnedRework + totalReturnedScrap;
 
-      // Available stock = sum of all signed deltas: (Produced + InitialInventory) - Dispatched + Reproceso ± Adjustments (RN-010-B)
-      const availableStock = produced - dispatched + returnedReworkLedger + adjustment;
+      // Available stock = sum of all signed deltas: (Produced + InitialInventory) - Dispatched + Reproceso ± Adjustments ± Corrections (RN-010-B)
+      const availableStock = produced - dispatched + returnedReworkLedger + adjustment + correction;
 
       return {
         productId: prod.id,
@@ -255,6 +273,8 @@ export class InventoryLedgerService {
         totalReturned,
         adjustmentNetQuantity: adjustment,
         netAdjustments: adjustment,
+        correctionNetQuantity: correction,
+        netCorrections: correction,
         availableStock,
       };
     });

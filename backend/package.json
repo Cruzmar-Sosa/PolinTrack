@@ -21,7 +21,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "tsx --env-file=.env prisma/seed.ts",
-    "db:clean": "tsx --env-file=.env prisma/clean-transactions.ts"
+    "db:clean": "ts-node prisma/clean-transactions.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"

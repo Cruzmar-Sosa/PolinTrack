@@ -15,6 +15,7 @@ import {
   TablePagination,
 } from '@/components/ui';
 import { InitialInventoryModal } from '@/components/operations/daily-production/initial-inventory-modal';
+import { QuantityCorrectionDialog } from '@/components/operations/corrections/quantity-correction-dialog';
 import {
   Factory,
   Calendar,
@@ -177,6 +178,9 @@ export default function DailyProductionPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Auditable Quantity Correction Modal
+  const [correctionTarget, setCorrectionTarget] = useState<DailyProduction | null>(null);
 
   const [formProductionDate, setFormProductionDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
@@ -720,12 +724,25 @@ export default function DailyProductionPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => handleOpenDetail(p)}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition"
-                        >
-                          Ficha Técnica
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenDetail(p)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition"
+                          >
+                            Ficha Técnica
+                          </button>
+                          {!p.isInitialInventory && (role === 'ADMIN' || role === 'CONTABILIDAD') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCorrectionTarget(p);
+                              }}
+                              className="text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded border border-amber-200 transition"
+                            >
+                              Corregir
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1095,6 +1112,18 @@ export default function DailyProductionPage() {
           setCurrentPage(1);
         }}
       />
+
+      {/* Modal de Corrección Auditable de Cantidades Producidas (RN-001) */}
+      {correctionTarget && (
+        <QuantityCorrectionDialog
+          isOpen={!!correctionTarget}
+          onClose={() => setCorrectionTarget(null)}
+          onSuccess={loadData}
+          module="DAILY_PRODUCTION"
+          recordId={correctionTarget.id}
+          recordCode={correctionTarget.productionLot}
+        />
+      )}
     </div>
   );
 }

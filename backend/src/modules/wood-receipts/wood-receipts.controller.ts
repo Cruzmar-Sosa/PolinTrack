@@ -25,6 +25,7 @@ import {
   SingleWoodReceiptResponseDto,
   WoodReceiptsListResponseDto,
 } from './dto/wood-receipt-response.dto';
+import { CorrectWoodReceiptDto } from './dto/correct-wood-receipt.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -96,5 +97,49 @@ export class WoodReceiptsController {
   @ApiResponse({ status: 404, description: 'Ingreso de madera no encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.woodReceiptsService.findOne(id);
+  }
+
+  @Get(':id/corrections-context')
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Obtener contexto y advertencias antes de abrir diálogo de corrección',
+    description: 'Devuelve valores actuales e informa si el ingreso está vinculado a órdenes de producción.',
+  })
+  @ApiResponse({ status: 200, description: 'Contexto obtenido con éxito' })
+  @ApiResponse({ status: 403, description: 'No autorizado para CONSULTA' })
+  async getCorrectionContext(@Param('id', ParseUUIDPipe) id: string) {
+    return this.woodReceiptsService.getCorrectionContext(id);
+  }
+
+  @Post(':id/corrections')
+  @HttpCode(HttpStatus.OK)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Corregir cantidades de un ingreso de madera (Auditable)',
+    description:
+      'Permite corregir exclusivamente cantidades (TIMBRE: pt; PROCESADA: yugos/reglas). Exige justificación válida (10-500 caracteres). Genera historial inmutable en quantity_corrections y audit_logs.',
+  })
+  @ApiResponse({ status: 200, description: 'Corrección persistida con éxito' })
+  @ApiResponse({ status: 400, description: 'Justificación genérica o cantidad inválida' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado para el rol CONSULTA' })
+  @ApiResponse({ status: 404, description: 'Ingreso no encontrado' })
+  async correctQuantity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectWoodReceiptDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.woodReceiptsService.correctQuantity(id, dto, userId);
+  }
+
+  @Get(':id/corrections')
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD, RoleType.CONSULTA)
+  @ApiOperation({
+    summary: 'Consultar historial de correcciones de un ingreso de madera',
+    description: 'Retorna la lista histórica inmutable de correcciones, actor, fecha, valores anteriores y nuevos.',
+  })
+  @ApiResponse({ status: 200, description: 'Historial de correcciones encontrado' })
+  async getCorrections(@Param('id', ParseUUIDPipe) id: string) {
+    return this.woodReceiptsService.getCorrections(id);
   }
 }

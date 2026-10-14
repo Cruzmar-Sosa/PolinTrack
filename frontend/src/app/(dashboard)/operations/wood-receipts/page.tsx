@@ -12,6 +12,7 @@ import {
 } from '@/lib/date-formatters';
 import { Dialog, Drawer } from '@/components/ui/dialog';
 import { TablePagination } from '@/components/ui';
+import { QuantityCorrectionDialog } from '@/components/operations/corrections/quantity-correction-dialog';
 
 interface Supplier {
   id: string;
@@ -119,6 +120,9 @@ export default function WoodReceiptsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [createLoading, setCreateLoading] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string>('');
+
+  // Auditable Correction Modal
+  const [correctionTarget, setCorrectionTarget] = useState<WoodReceipt | null>(null);
 
   // Form State
   const [formSupplierId, setFormSupplierId] = useState<string>('');
@@ -633,15 +637,28 @@ export default function WoodReceiptsPage() {
                         {r.guideNumber || <span className="text-slate-300">-</span>}
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDrawer(r);
-                          }}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition"
-                        >
-                          Ficha Técnica
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDrawer(r);
+                            }}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition"
+                          >
+                            Ficha Técnica
+                          </button>
+                          {(user?.role === 'ADMIN' || user?.role === 'CONTABILIDAD') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCorrectionTarget(r);
+                              }}
+                              className="text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded border border-amber-200 transition"
+                            >
+                              Corregir
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1110,6 +1127,18 @@ export default function WoodReceiptsPage() {
               </div>
             </form>
       </Dialog>
+
+      {/* 4. Auditable Quantity Correction Dialog (RN-001) */}
+      {correctionTarget && (
+        <QuantityCorrectionDialog
+          isOpen={!!correctionTarget}
+          onClose={() => setCorrectionTarget(null)}
+          onSuccess={() => loadAllData(token)}
+          module="WOOD_RECEIPT"
+          recordId={correctionTarget.id}
+          recordCode={correctionTarget.lotNumber}
+        />
+      )}
     </div>
   );
 }

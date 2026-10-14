@@ -25,6 +25,7 @@ import {
   DailyProductionListResponseDto,
   SingleDailyProductionResponseDto,
 } from './dto/daily-production-response.dto';
+import { CorrectDailyProductionDto } from './dto/correct-daily-production.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -98,5 +99,49 @@ export class DailyProductionController {
   @ApiResponse({ status: 404, description: 'Orden de producción no encontrada' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.dailyProductionService.findOne(id);
+  }
+
+  @Get(':id/corrections-context')
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Obtener contexto y límites permitidos antes de editar orden de producción',
+    description:
+      'Devuelve líneas actuales, cantidades fumigadas, despachadas netas y stock disponible para validación previa en UI.',
+  })
+  @ApiResponse({ status: 200, description: 'Contexto de corrección obtenido exitosamente' })
+  @ApiResponse({ status: 403, description: 'No autorizado para CONSULTA' })
+  async getCorrectionContext(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dailyProductionService.getCorrectionContext(id);
+  }
+
+  @Post(':id/corrections')
+  @HttpCode(HttpStatus.OK)
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD)
+  @ApiOperation({
+    summary: 'Corregir cantidades de una orden de producción diaria (Auditable)',
+    description:
+      'Modifica cantidades producidas de líneas existentes. Valida que no se reduzca por debajo de piezas fumigadas ni despachos netos. Registra movimientos compensatorios en ledger de inventario (MovementType.CORRECTION) y auditoría inmutable.',
+  })
+  @ApiResponse({ status: 200, description: 'Corrección de producción aplicada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Violación de dependencias (fumigación, despachos o stock)' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado para CONSULTA' })
+  async correctQuantity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectDailyProductionDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.dailyProductionService.correctQuantity(id, dto, userId);
+  }
+
+  @Get(':id/corrections')
+  @Roles(RoleType.ADMIN, RoleType.CONTABILIDAD, RoleType.CONSULTA)
+  @ApiOperation({
+    summary: 'Consultar historial de correcciones de una orden de producción',
+    description: 'Retorna el historial inmutable de correcciones, actor, fecha, deltas y líneas afectadas.',
+  })
+  @ApiResponse({ status: 200, description: 'Historial de correcciones encontrado' })
+  async getCorrections(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dailyProductionService.getCorrections(id);
   }
 }

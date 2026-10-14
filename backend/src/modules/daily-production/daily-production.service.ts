@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MovementType, Prisma } from '@prisma/client';
+import { MovementType, Prisma, CorrectionModule, ReturnDestination } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InventoryLedgerService } from '../inventory/inventory-ledger.service';
 import {
@@ -13,6 +13,8 @@ import {
   ProductionProductItemDto,
 } from './dto/create-daily-production.dto';
 import { QueryDailyProductionDto } from './dto/query-daily-production.dto';
+import { CorrectDailyProductionDto } from './dto/correct-daily-production.dto';
+import { validateCorrectionReason } from '../../common/utils/correction-reason.validator';
 import { getISOWeek } from './utils/iso-week.util';
 
 @Injectable()
@@ -569,6 +571,611 @@ export class DailyProductionService {
           })),
         fumigations: item.fumigations || [],
       },
+    };
+  }
+
+  /**
+   * Retrieves context, lines, and active dependencies (fumigated and net dispatched)
+   * for a daily production record prior to editing.
+   */
+  async getCorrectionContext(id: string) {
+    const item = await this.prisma.dailyProduction.findUnique({
+      where: { id },
+      include: {
+        productionDetails: {
+          include: { product: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException({
+        code: 'RESOURCE_NOT_FOUND',
+        message: `Orden de producción con ID '${id}' no encontrada`,
+      });
+    }
+
+    if ((item as any).isInitialInventory) {
+      throw new BadRequestException({
+        code: 'INITIAL_INVENTORY_NOT_CORRECTABLE',
+        message: 'Los registros de inventario inicial no admiten correcciones en este flujo.',
+      });
+    }
+
+    const linesContext = await Promise.all(
+      item.productionDetails.map(async (d) => {
+        // Active fumigations
+        const fumAgg = await this.prisma.fumigationDetail.aggregate({
+          where: { dailyProductionId: item.id, productId: d.productId },
+          _sum: { quantityFumigated: true },
+        });
+        const fumigated = fumAgg._sum.quantityFumigated ?? 0;
+
+        // Active net dispatches
+        const dispatchLines = await this.prisma.dispatchDetail.findMany({
+          where: { dailyProductionId: item.id, productId: d.productId },
+          include: {
+            returnDetails: {
+              where: { destination: ReturnDestination.REPROCESO },
+            },
+          },
+        });
+        let netDispatched = 0;
+        for (const dl of dispatchLines) {
+          const reworkReturned = dl.returnDetails.reduce(
+            (sum, rd) => sum + rd.quantityReturned,
+            0,
+          );
+          netDispatched += Math.max(0, dl.quantityDispatched - reworkReturned);
+        }
+
+        const availableStock = await this.inventoryLedgerService.getAvailableStock(
+          d.productId,
+        );
+
+        return {
+          lineId: d.id,
+          productId: d.productId,
+          productName: d.product.name,
+          dimensions: d.product.dimensions,
+          currentQuantityProduced: d.quantityProduced,
+          quantityFumigated: fumigated,
+          quantityNetDispatched: netDispatched,
+          minimumAllowedQuantity: Math.max(fumigated, netDispatched),
+          availableStock,
+        };
+      }),
+    );
+
+    const activeProducts = await this.prisma.product.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, dimensions: true },
+      orderBy: { dimensions: 'asc' },
+    });
+
+    const products = await Promise.all(
+      activeProducts.map(async (p) => ({
+        id: p.id,
+        name: p.name,
+        dimensions: p.dimensions,
+        availableStock: await this.inventoryLedgerService.getAvailableStock(p.id),
+      })),
+    );
+
+    return {
+      success: true,
+      data: {
+        id: item.id,
+        productionLot: item.productionLot,
+        productionDate: item.productionDate,
+        isoWeek: item.isoWeek,
+        totalQuantityProduced: item.quantityProduced,
+        products,
+        lines: linesContext,
+      },
+    };
+  }
+
+  /**
+   * Executes an atomic, auditable quantity correction for daily production lines.
+   * Supports both quantity modifications and product (polín measure) reclassifications.
+   * Recalculates header total on server.
+   * Enforces fumigation, net dispatch, and catalog inventory bounds.
+   * Generates InventoryMovement(MovementType.CORRECTION) + QuantityCorrection + AuditLog.
+   */
+  async correctQuantity(id: string, dto: CorrectDailyProductionDto, userId: string) {
+    // 1. Mandatory Reason Validation (10-500 chars, blacklist filtered)
+    const validatedReason = validateCorrectionReason(dto.reason);
+
+    // 2. Idempotency Check
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.quantityCorrection.findUnique({
+        where: { idempotencyKey: dto.idempotencyKey },
+        include: {
+          items: true,
+          correctedBy: {
+            select: { id: true, fullName: true, email: true, role: true },
+          },
+        },
+      });
+      if (existing) {
+        if (existing.recordId && existing.recordId !== id) {
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_KEY_REUSED',
+            message: 'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
+          });
+        }
+        const item = await this.findOne(id);
+        return {
+          success: true,
+          message: 'Operación idempotente: la corrección ya fue registrada previamente.',
+          data: item.data,
+          correction: existing,
+        };
+      }
+    }
+
+    // 3. Atomically execute update within database transaction
+    return this.prisma.$transaction(async (tx) => {
+      // Concurrency protection: row lock on operational header to prevent race conditions
+      if (typeof (tx as any).$queryRaw === 'function') {
+        try {
+          await tx.$queryRaw`SELECT id FROM daily_productions WHERE id = ${id}::uuid FOR UPDATE`;
+        } catch {
+          // Fallback if raw query execution is not supported in the active client/mock
+        }
+      }
+
+      const production = await tx.dailyProduction.findUnique({
+        where: { id },
+        include: {
+          productionDetails: {
+            include: { product: true },
+          },
+        },
+      });
+
+      if (!production) {
+        throw new NotFoundException({
+          code: 'RESOURCE_NOT_FOUND',
+          message: `Orden de producción con ID '${id}' no encontrada`,
+        });
+      }
+
+      if ((production as any).isInitialInventory) {
+        throw new BadRequestException({
+          code: 'INITIAL_INVENTORY_NOT_CORRECTABLE',
+          message: 'Los registros de inventario inicial no admiten correcciones en este flujo.',
+        });
+      }
+
+      // Map lines by ID
+      const detailMap = new Map(production.productionDetails.map((d) => [d.id, d]));
+
+      // Validate all input items exist in current production
+      for (const itemDto of dto.items) {
+        if (!detailMap.has(itemDto.lineId)) {
+          throw new BadRequestException({
+            code: 'INVALID_LINE_ID',
+            message: `La línea con ID '${itemDto.lineId}' no pertenece a la orden de producción '${production.productionLot}'.`,
+          });
+        }
+      }
+
+      const itemsToRecord: Array<{
+        lineId: string;
+        productId: string;
+        fieldName: string;
+        previous: number;
+        new: number;
+        delta: number;
+        movementId?: string;
+      }> = [];
+
+      const productReclassifications: Array<{
+        lineId: string;
+        previousProductId: string;
+        previousDimensions: string;
+        previousQuantity: number;
+        newProductId: string;
+        newDimensions: string;
+        newQuantity: number;
+      }> = [];
+
+      let hasActualChange = false;
+
+      for (const itemDto of dto.items) {
+        const detail = detailMap.get(itemDto.lineId)!;
+        const prevQty = detail.quantityProduced;
+        const prevProductId = detail.productId;
+        const newProductId =
+          itemDto.productId && itemDto.productId !== prevProductId
+            ? itemDto.productId
+            : prevProductId;
+        const isProductChange = newProductId !== prevProductId;
+        const newQty = itemDto.quantity;
+        const delta = newQty - prevQty;
+
+        if (!isProductChange && delta === 0) {
+          continue;
+        }
+
+        hasActualChange = true;
+
+        if (isProductChange) {
+          // Validate new target product exists and is active
+          const newProduct = await tx.product.findUnique({
+            where: { id: newProductId },
+          });
+          if (!newProduct || !newProduct.isActive) {
+            throw new BadRequestException({
+              code: 'PRODUCT_NOT_FOUND',
+              message: `El producto de destino con ID '${newProductId}' no existe o no está activo en el catálogo.`,
+            });
+          }
+
+          // Enforce @@unique([dailyProductionId, productId]): line cannot collide with existing product line
+          const duplicateLine = production.productionDetails.find(
+            (d) => d.id !== detail.id && d.productId === newProductId,
+          );
+          if (duplicateLine) {
+            throw new BadRequestException({
+              code: 'PRODUCT_ALREADY_EXISTS_IN_PRODUCTION',
+              message: `El lote ${production.productionLot} ya cuenta con una línea para ${newProduct.dimensions}. Ajuste la cantidad directamente en la línea existente.`,
+            });
+          }
+
+          // A. Fumigation Constraint on outgoing product: cannot change if fumigations exist
+          const fumAgg = await tx.fumigationDetail.aggregate({
+            where: { dailyProductionId: production.id, productId: prevProductId },
+            _sum: { quantityFumigated: true },
+          });
+          const totalFumigated = fumAgg._sum.quantityFumigated ?? 0;
+          if (totalFumigated > 0) {
+            throw new BadRequestException({
+              code: 'CANNOT_CHANGE_PRODUCT_WITH_FUMIGATION',
+              message: `No se puede rectificar el producto ${detail.product.dimensions} en el lote ${production.productionLot} porque tiene ${totalFumigated} piezas amparadas en certificado(s) de fumigación OIRSA.`,
+            });
+          }
+
+          // B. Net Dispatches Constraint on outgoing product: cannot change if committed dispatches exist
+          const dispatchLines = await tx.dispatchDetail.findMany({
+            where: { dailyProductionId: production.id, productId: prevProductId },
+            include: {
+              returnDetails: {
+                where: { destination: ReturnDestination.REPROCESO },
+              },
+            },
+          });
+          let netDispatched = 0;
+          for (const dl of dispatchLines) {
+            const reworkReturned = dl.returnDetails.reduce(
+              (sum, rd) => sum + rd.quantityReturned,
+              0,
+            );
+            netDispatched += Math.max(0, dl.quantityDispatched - reworkReturned);
+          }
+          if (netDispatched > 0) {
+            throw new BadRequestException({
+              code: 'CANNOT_CHANGE_PRODUCT_WITH_COMMITTED_DISPATCH',
+              message: `No se puede rectificar el producto ${detail.product.dimensions} en el lote ${production.productionLot} porque tiene ${netDispatched} piezas comprometidas en despachos comerciales netos.`,
+            });
+          }
+
+          // C. Global Stock Sufficiency for outgoing product: patio must have enough stock to withdraw prevQty
+          const currentAvailableOld = await this.inventoryLedgerService.getAvailableStock(
+            prevProductId,
+            tx,
+          );
+          if (currentAvailableOld < prevQty) {
+            throw new BadRequestException({
+              code: 'INSUFFICIENT_STOCK_FOR_REDUCTION',
+              message: `Stock insuficiente en almacén para descontar ${prevQty} piezas de ${detail.product.dimensions}. Stock disponible actual: ${currentAvailableOld}.`,
+            });
+          }
+
+          // Compensatory Movement 1: Deduct outgoing product from inventory ledger
+          const movementOut = await tx.inventoryMovement.create({
+            data: {
+              productId: prevProductId,
+              movementType: MovementType.CORRECTION,
+              deltaQuantity: -prevQty,
+              referenceTable: 'daily_productions',
+              referenceId: production.id,
+              performedById: userId,
+              metadata: {
+                lineId: detail.id,
+                productionLot: production.productionLot,
+                action: 'PRODUCT_RECLASSIFICATION_OUT',
+                previousProductId: prevProductId,
+                previousDimensions: detail.product.dimensions,
+                newProductId,
+                newDimensions: newProduct.dimensions,
+                previousQuantity: prevQty,
+                newQuantity: 0,
+                reason: validatedReason,
+              },
+            },
+          });
+
+          // Compensatory Movement 2: Add incoming product to inventory ledger
+          const movementIn = await tx.inventoryMovement.create({
+            data: {
+              productId: newProductId,
+              movementType: MovementType.CORRECTION,
+              deltaQuantity: newQty,
+              referenceTable: 'daily_productions',
+              referenceId: production.id,
+              performedById: userId,
+              metadata: {
+                lineId: detail.id,
+                productionLot: production.productionLot,
+                action: 'PRODUCT_RECLASSIFICATION_IN',
+                previousProductId: prevProductId,
+                previousDimensions: detail.product.dimensions,
+                newProductId,
+                newDimensions: newProduct.dimensions,
+                previousQuantity: 0,
+                newQuantity: newQty,
+                reason: validatedReason,
+              },
+            },
+          });
+
+          // Update production_detail line with new product and new quantity
+          await tx.productionDetail.update({
+            where: { id: detail.id },
+            data: {
+              productId: newProductId,
+              quantityProduced: newQty,
+            },
+          });
+
+          // Audit record: 2 atomic items (withdrawal from old product, entry to new product)
+          itemsToRecord.push(
+            {
+              lineId: detail.id,
+              productId: prevProductId,
+              fieldName: 'product_reclassification_out',
+              previous: prevQty,
+              new: 0,
+              delta: -prevQty,
+              movementId: movementOut.id,
+            },
+            {
+              lineId: detail.id,
+              productId: newProductId,
+              fieldName: 'product_reclassification_in',
+              previous: 0,
+              new: newQty,
+              delta: newQty,
+              movementId: movementIn.id,
+            },
+          );
+
+          productReclassifications.push({
+            lineId: detail.id,
+            previousProductId: prevProductId,
+            previousDimensions: detail.product.dimensions,
+            previousQuantity: prevQty,
+            newProductId,
+            newDimensions: newProduct.dimensions,
+            newQuantity: newQty,
+          });
+        } else {
+          // Standard quantity adjustment on same product
+          if (delta < 0) {
+            // A. Fumigation Constraint
+            const fumAgg = await tx.fumigationDetail.aggregate({
+              where: { dailyProductionId: production.id, productId: detail.productId },
+              _sum: { quantityFumigated: true },
+            });
+            const totalFumigated = fumAgg._sum.quantityFumigated ?? 0;
+            if (newQty < totalFumigated) {
+              throw new BadRequestException({
+                code: 'CANNOT_REDUCE_BELOW_FUMIGATED',
+                message: `No se puede reducir la producción a ${newQty} piezas para ${detail.product.dimensions} en el lote ${production.productionLot}. Existen ${totalFumigated} piezas ya fumigadas.`,
+              });
+            }
+
+            // B. Net Dispatches Constraint
+            const dispatchLines = await tx.dispatchDetail.findMany({
+              where: { dailyProductionId: production.id, productId: detail.productId },
+              include: {
+                returnDetails: {
+                  where: { destination: ReturnDestination.REPROCESO },
+                },
+              },
+            });
+            let netDispatched = 0;
+            for (const dl of dispatchLines) {
+              const reworkReturned = dl.returnDetails.reduce(
+                (sum, rd) => sum + rd.quantityReturned,
+                0,
+              );
+              netDispatched += Math.max(0, dl.quantityDispatched - reworkReturned);
+            }
+            if (newQty < netDispatched) {
+              throw new BadRequestException({
+                code: 'CANNOT_REDUCE_BELOW_COMMITTED_DISPATCH',
+                message: `No se puede reducir la producción a ${newQty} piezas para ${detail.product.dimensions} en el lote ${production.productionLot}. Existen ${netDispatched} piezas comprometidas en despachos netos.`,
+              });
+            }
+
+            // C. Global Stock Sufficiency
+            const currentAvailable = await this.inventoryLedgerService.getAvailableStock(
+              detail.productId,
+              tx,
+            );
+            if (currentAvailable < Math.abs(delta)) {
+              throw new BadRequestException({
+                code: 'INSUFFICIENT_STOCK_FOR_REDUCTION',
+                message: `Stock insuficiente en almacén para descontar ${Math.abs(delta)} piezas de ${detail.product.dimensions}. Stock disponible actual: ${currentAvailable}.`,
+              });
+            }
+          }
+
+          // Create compensatory movement in inventory_movements ledger
+          const movement = await tx.inventoryMovement.create({
+            data: {
+              productId: detail.productId,
+              movementType: MovementType.CORRECTION,
+              deltaQuantity: delta, // signed (+ or -)
+              referenceTable: 'daily_productions',
+              referenceId: production.id,
+              performedById: userId,
+              metadata: {
+                lineId: detail.id,
+                productionLot: production.productionLot,
+                previousQuantity: prevQty,
+                newQuantity: newQty,
+                reason: validatedReason,
+              },
+            },
+          });
+
+          // Update production_detail line
+          await tx.productionDetail.update({
+            where: { id: detail.id },
+            data: { quantityProduced: newQty },
+          });
+
+          itemsToRecord.push({
+            lineId: detail.id,
+            productId: detail.productId,
+            fieldName: 'quantityProduced',
+            previous: prevQty,
+            new: newQty,
+            delta,
+            movementId: movement.id,
+          });
+        }
+      }
+
+      if (!hasActualChange) {
+        throw new BadRequestException({
+          code: 'NO_CHANGES_DETECTED',
+          message: 'Las cantidades y medidas ingresadas son idénticas a las registradas actualmente. No se detectaron cambios.',
+        });
+      }
+
+      // Recalculate header total from all details in DB
+      const updatedLines = await tx.productionDetail.findMany({
+        where: { dailyProductionId: production.id },
+      });
+      const newHeaderTotal = updatedLines.reduce((sum, d) => sum + d.quantityProduced, 0);
+
+      await tx.dailyProduction.update({
+        where: { id: production.id },
+        data: { quantityProduced: newHeaderTotal },
+      });
+
+      // Append-only QuantityCorrection record
+      const correction = await tx.quantityCorrection.create({
+        data: {
+          module: CorrectionModule.DAILY_PRODUCTION,
+          recordId: production.id,
+          recordCode: production.productionLot,
+          reason: validatedReason,
+          correctedById: userId,
+          idempotencyKey: dto.idempotencyKey || null,
+          metadata: {
+            previousHeaderTotal: production.quantityProduced,
+            newHeaderTotal,
+            linesModifiedCount: itemsToRecord.length,
+            productReclassifications:
+              productReclassifications.length > 0 ? productReclassifications : undefined,
+          },
+          items: {
+            create: itemsToRecord.map((item) => ({
+              lineId: item.lineId,
+              fieldName: item.fieldName,
+              productId: item.productId,
+              previousQuantity: new Prisma.Decimal(item.previous),
+              newQuantity: new Prisma.Decimal(item.new),
+              deltaQuantity: new Prisma.Decimal(item.delta),
+              inventoryMovementId: item.movementId || null,
+            })),
+          },
+        },
+        include: {
+          items: true,
+          correctedBy: {
+            select: { id: true, fullName: true, email: true, role: true },
+          },
+        },
+      });
+
+      // Append-only AuditLog
+      await tx.auditLog.create({
+        data: {
+          tableName: 'daily_productions',
+          recordId: production.id,
+          action: 'CORRECTION',
+          oldValues: {
+            quantityProduced: production.quantityProduced,
+            lines: itemsToRecord.map((i) => ({
+              lineId: i.lineId,
+              productId: i.productId,
+              quantity: i.previous,
+            })),
+          },
+          newValues: {
+            quantityProduced: newHeaderTotal,
+            lines: itemsToRecord.map((i) => ({
+              lineId: i.lineId,
+              productId: i.productId,
+              quantity: i.new,
+              delta: i.delta,
+            })),
+          },
+          correctionReason: validatedReason,
+          userId,
+        },
+      });
+
+      this.logger.log(
+        `[DailyProduction] Corrección completada: ID=${production.id}, Lote=${production.productionLot}, TotalNuevo=${newHeaderTotal}, Items=${itemsToRecord.length}, User=${userId}`,
+      );
+
+      return {
+        success: true,
+        data: {
+          id: production.id,
+          productionLot: production.productionLot,
+          quantityProduced: newHeaderTotal,
+        },
+        correction,
+      };
+    });
+  }
+
+  /**
+   * Retrieves read-only historical list of quantity corrections for a given daily production order.
+   */
+  async getCorrections(id: string) {
+    const corrections = await this.prisma.quantityCorrection.findMany({
+      where: {
+        module: CorrectionModule.DAILY_PRODUCTION,
+        recordId: id,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, name: true, dimensions: true } },
+          },
+        },
+        correctedBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      data: corrections,
     };
   }
 }

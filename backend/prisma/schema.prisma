@@ -62,6 +62,13 @@ enum MovementType {
   RETURN             // Increments physical stock (+)
   ADJUSTMENT         // Signed adjustment (+/-)
   INITIAL_INVENTORY  // Initial physical stock baseline (+)
+  CORRECTION         // Compensatory correction movement (+/-)
+}
+
+enum CorrectionModule {
+  WOOD_RECEIPT
+  DAILY_PRODUCTION
+  DISPATCH
 }
 
 enum AdjustmentType {
@@ -96,6 +103,7 @@ model User {
   returnHeaders       ReturnHeader[]
   executedAdjustments InventoryAdjustment[]
   inventoryMovements  InventoryMovement[]
+  quantityCorrections QuantityCorrection[]
   auditLogs           AuditLog[]
 
   @@map("users")
@@ -153,13 +161,14 @@ model Product {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  dailyProductions     DailyProduction[]
-  productionDetails    ProductionDetail[]
-  dispatchDetails      DispatchDetail[]
-  returnDetails        ReturnDetail[]
-  inventoryAdjustments InventoryAdjustment[]
-  inventoryMovements   InventoryMovement[]
-  fumigationDetails    FumigationDetail[]
+  dailyProductions        DailyProduction[]
+  productionDetails       ProductionDetail[]
+  dispatchDetails         DispatchDetail[]
+  returnDetails           ReturnDetail[]
+  inventoryAdjustments    InventoryAdjustment[]
+  inventoryMovements      InventoryMovement[]
+  fumigationDetails       FumigationDetail[]
+  quantityCorrectionItems QuantityCorrectionItem[]
 
   @@map("products")
 }
@@ -449,8 +458,9 @@ model InventoryMovement {
   timestamp      DateTime            @default(now()) @db.Timestamptz
   performedById  String              @map("performed_by_id") @db.Uuid
 
-  product     Product @relation(fields: [productId], references: [id])
-  performedBy User    @relation(fields: [performedById], references: [id])
+  product                 Product                  @relation(fields: [productId], references: [id])
+  performedBy             User                     @relation(fields: [performedById], references: [id])
+  quantityCorrectionItems QuantityCorrectionItem[]
 
   @@index([productId, timestamp])
   @@index([referenceTable, referenceId])
@@ -479,4 +489,50 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ==============================================================================
+// 12. AUDITABLE QUANTITY CORRECTIONS (APPEND-ONLY)
+// ==============================================================================
+
+model QuantityCorrection {
+  id             String           @id @default(uuid()) @db.Uuid
+  module         CorrectionModule
+  recordId       String           @map("record_id") @db.Uuid
+  recordCode     String           @map("record_code") @db.VarChar(100)
+  reason         String           @db.VarChar(500)
+  correctedById  String           @map("corrected_by_id") @db.Uuid
+  idempotencyKey String?          @unique @map("idempotency_key") @db.VarChar(100)
+  metadata       Json?            @map("metadata")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  correctedBy User                     @relation(fields: [correctedById], references: [id])
+  items       QuantityCorrectionItem[]
+
+  @@index([module, recordId])
+  @@index([correctedById])
+  @@index([createdAt])
+  @@map("quantity_corrections")
+}
+
+model QuantityCorrectionItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  correctionId        String   @map("correction_id") @db.Uuid
+  lineId              String?  @map("line_id") @db.Uuid
+  fieldName           String   @map("field_name") @db.VarChar(100)
+  productId           String?  @map("product_id") @db.Uuid
+  previousQuantity    Decimal  @map("previous_quantity") @db.Decimal(12, 2)
+  newQuantity         Decimal  @map("new_quantity") @db.Decimal(12, 2)
+  deltaQuantity       Decimal  @map("delta_quantity") @db.Decimal(12, 2)
+  inventoryMovementId String?  @map("inventory_movement_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  correction        QuantityCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
+  product           Product?           @relation(fields: [productId], references: [id])
+  inventoryMovement InventoryMovement? @relation(fields: [inventoryMovementId], references: [id])
+
+  @@index([correctionId])
+  @@index([lineId])
+  @@index([productId])
+  @@map("quantity_correction_items")
 }

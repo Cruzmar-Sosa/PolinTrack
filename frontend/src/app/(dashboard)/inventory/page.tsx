@@ -58,13 +58,15 @@ interface ProductStock {
   totalReturnedScrap?: number;
   totalReturned?: number;
   adjustmentNetQuantity: number;
+  correctionNetQuantity?: number;
+  netCorrections?: number;
   availableStock: number;
 }
 
 interface KardexMovement {
   id: string;
   productId: string;
-  movementType: 'PRODUCTION' | 'DISPATCH' | 'RETURN' | 'ADJUSTMENT' | 'INITIAL_INVENTORY';
+  movementType: 'PRODUCTION' | 'DISPATCH' | 'RETURN' | 'ADJUSTMENT' | 'INITIAL_INVENTORY' | 'CORRECTION';
   deltaQuantity: number;
   destination?: 'REPROCESO' | 'DESECHO' | null;
   metadata?: any;
@@ -96,6 +98,7 @@ function formatReferenceTable(table: string): string {
     return_details: 'Devolución Comercial',
     dispatch_details: 'Despacho a Cliente',
     inventory_adjustments: 'Ajuste de Stock',
+    quantity_corrections: 'Corrección Auditable',
     fumigation_details: 'Tratamiento Fitosanitario',
     wood_receipts: 'Recepción de Madera',
     production_details: 'Producción Diaria',
@@ -241,6 +244,7 @@ export default function InventoryPage() {
     0,
   );
   const totalAdjustments = inventory.reduce((sum, p) => sum + (p.adjustmentNetQuantity || 0), 0);
+  const totalCorrections = inventory.reduce((sum, p) => sum + (p.correctionNetQuantity || p.netCorrections || 0), 0);
 
   return (
     <div className="space-y-6 pb-12">
@@ -377,12 +381,12 @@ export default function InventoryPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Ajustes Netos</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Ajustes / Correcciones</p>
                 {isLoadingStock ? (
                   <Skeleton className="h-8 w-24 mt-1" />
                 ) : (
                   <h3 className="text-2xl font-black text-slate-900 font-mono mt-1">
-                    {totalAdjustments > 0 ? `+${totalAdjustments}` : totalAdjustments}{' '}
+                    {(totalAdjustments + totalCorrections) > 0 ? `+${totalAdjustments + totalCorrections}` : (totalAdjustments + totalCorrections)}{' '}
                     <span className="text-xs font-normal text-slate-500">pcs</span>
                   </h3>
                 )}
@@ -391,7 +395,9 @@ export default function InventoryPage() {
                 <SlidersHorizontal className="w-5 h-5" />
               </div>
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">Rectificaciones de patio autorizadas</p>
+            <p className="text-[11px] text-slate-500 mt-2 font-medium">
+              Ajustes: {totalAdjustments >= 0 ? `+${totalAdjustments}` : totalAdjustments} · Correcciones: {totalCorrections >= 0 ? `+${totalCorrections}` : totalCorrections} pcs
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -440,7 +446,7 @@ export default function InventoryPage() {
                 <span>Existencias Físicas por Catálogo de Polines</span>
               </CardTitle>
               <MutedText>
-                Fórmula canónica RN-010: Stock = Producción - Salidas + Devoluciones ± Ajustes
+                Fórmula canónica RN-010: Stock = Producción - Salidas + Devoluciones ± Ajustes ± Correcciones
               </MutedText>
             </div>
             <Badge variant="institutional">Fuente Única: Ledger</Badge>
@@ -462,15 +468,16 @@ export default function InventoryPage() {
                   <TableHead className="text-right whitespace-nowrap">DEVOLUCIONES: REPROCESO (+)</TableHead>
                   <TableHead className="text-right whitespace-nowrap">DEVOLUCIONES: DESECHO (-)</TableHead>
                   <TableHead className="text-right">Ajustes</TableHead>
+                  <TableHead className="text-right">Correcciones</TableHead>
                   <TableHead className="text-right w-[160px]">Stock Disponible</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoadingStock ? (
-                  <TableLoading colSpan={8} message="Calculando existencias en vivo desde PostgreSQL..." />
+                  <TableLoading colSpan={9} message="Calculando existencias en vivo desde PostgreSQL..." />
                 ) : inventory.length === 0 ? (
                   <TableEmpty
-                    colSpan={8}
+                    colSpan={9}
                     title="Sin productos en inventario"
                     message="No se encontraron productos registrados en el catálogo."
                   />
@@ -522,6 +529,15 @@ export default function InventoryPage() {
                             <span className="text-emerald-700">+{item.adjustmentNetQuantity}</span>
                           ) : item.adjustmentNetQuantity < 0 ? (
                             <span className="text-rose-700">{item.adjustmentNetQuantity}</span>
+                          ) : (
+                            <span className="text-slate-400">0</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">
+                          {(item.correctionNetQuantity || item.netCorrections || 0) > 0 ? (
+                            <span className="text-purple-700 font-semibold">+{item.correctionNetQuantity || item.netCorrections}</span>
+                          ) : (item.correctionNetQuantity || item.netCorrections || 0) < 0 ? (
+                            <span className="text-rose-700 font-semibold">{item.correctionNetQuantity || item.netCorrections}</span>
                           ) : (
                             <span className="text-slate-400">0</span>
                           )}
@@ -591,6 +607,7 @@ export default function InventoryPage() {
                     <option value="DISPATCH">DESPACHO (-)</option>
                     <option value="RETURN">DEVOLUCIÓN (+)</option>
                     <option value="ADJUSTMENT">AJUSTE (±)</option>
+                    <option value="CORRECTION">CORRECCIÓN AUDITABLE (±)</option>
                   </Select>
                 </div>
 
@@ -721,6 +738,12 @@ export default function InventoryPage() {
                               <Badge variant="purple">
                                 <SlidersHorizontal className="w-3 h-3 mr-1 inline" />
                                 AJUSTE
+                              </Badge>
+                            )}
+                            {mov.movementType === 'CORRECTION' && (
+                              <Badge variant="warning" className="bg-amber-100 text-amber-900 border-amber-200">
+                                <History className="w-3 h-3 mr-1 inline" />
+                                CORRECCIÓN AUDITABLE
                               </Badge>
                             )}
                           </TableCell>

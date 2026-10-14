@@ -71,7 +71,19 @@ export class ProductStockDto {
   netAdjustments?: number;
 
   @ApiProperty({
-    description: 'Stock físico disponible calculado dinámicamente según RN-010-B: Producido - Despachado + Reproceso ± Ajustes',
+    description: 'Variación neta por correcciones auditables de cantidades (+ o -)',
+    example: 0,
+  })
+  correctionNetQuantity: number;
+
+  @ApiProperty({
+    description: 'Alias de variación neta por correcciones',
+    example: 0,
+  })
+  netCorrections?: number;
+
+  @ApiProperty({
+    description: 'Stock físico disponible calculado dinámicamente: Producido - Despachado + Reproceso ± Ajustes ± Correcciones',
     example: 2150,
   })
   availableStock: number;

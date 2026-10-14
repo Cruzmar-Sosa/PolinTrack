@@ -336,6 +336,7 @@ export default function ReportsPage() {
           'Devoluciones (Reproceso)',
           'Devoluciones (Desecho)',
           'Ajustes Netos (±)',
+          'Correcciones Netas (±)',
           'Stock Disponible en Patio',
         ];
         rows = inventory.map((i) => [
@@ -346,6 +347,7 @@ export default function ReportsPage() {
           i.totalReturnedRework ?? i.totalReturned ?? 0,
           i.totalReturnedScrap ?? 0,
           i.netAdjustments,
+          i.netCorrections ?? 0,
           i.currentAvailableStock,
         ]);
         break;
@@ -524,6 +526,11 @@ export default function ReportsPage() {
               align: 'right',
             },
             {
+              header: 'Correcciones Netas (±)',
+              render: (r: InventoryReportItem) => `${(r.netCorrections ?? 0) >= 0 ? '+' : ''}${Number(r.netCorrections ?? 0).toLocaleString('es-NI')} pcs`,
+              align: 'right',
+            },
+            {
               header: 'Stock Patio',
               render: (r: InventoryReportItem) => `${Number(r.currentAvailableStock).toLocaleString('es-NI')} pcs`,
               align: 'right',
@@ -535,6 +542,9 @@ export default function ReportsPage() {
               <span>Total Despachado: <strong>{inventorySummary.totalDispatched.toLocaleString('es-NI')} pcs</strong></span>
               <span>Reproceso (+): <strong>{(inventorySummary.totalReturnedRework ?? 0).toLocaleString('es-NI')} pcs</strong></span>
               <span>Desecho (-): <strong>{(inventorySummary.totalReturnedScrap ?? 0).toLocaleString('es-NI')} pcs</strong></span>
+              {(inventorySummary as any).totalCorrections !== undefined && (
+                <span>Correcciones (±): <strong>{((inventorySummary as any).totalCorrections ?? 0).toLocaleString('es-NI')} pcs</strong></span>
+              )}
               <span>Saldo Disponible Patio: <strong>{inventorySummary.totalAvailableStock.toLocaleString('es-NI')} pcs</strong></span>
             </div>
           ) : undefined,

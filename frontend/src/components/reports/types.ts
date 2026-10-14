@@ -68,6 +68,7 @@ export interface InventoryReportItem {
   totalReturnedRework?: number;
   totalReturnedScrap?: number;
   netAdjustments: number;
+  netCorrections?: number;
   currentAvailableStock: number;
 }
 
@@ -77,6 +78,8 @@ export interface InventoryReportSummary {
   totalReturned: number;
   totalReturnedRework?: number;
   totalReturnedScrap?: number;
+  totalAdjustments?: number;
+  totalCorrections?: number;
   totalAvailableStock: number;
 }
 

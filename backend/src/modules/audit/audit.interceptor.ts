@@ -49,8 +49,13 @@ export class AuditInterceptor implements NestInterceptor {
     const url: string = req.originalUrl || req.url || '';
 
     // Omitir endpoints de autenticación puros (/auth/login, /auth/refresh) de audit_logs de tablas
-    // ya que no mapean a entidades físicas con UUID de registro propio
-    if (url.includes('/auth/login') || url.includes('/auth/refresh')) {
+    // ya que no mapean a entidades físicas con UUID de registro propio.
+    // Omitir endpoints de correcciones (/corrections) que gestionan su propia auditoría atómica transaccional.
+    if (
+      url.includes('/auth/login') ||
+      url.includes('/auth/refresh') ||
+      url.includes('/corrections')
+    ) {
       return next.handle();
     }
 

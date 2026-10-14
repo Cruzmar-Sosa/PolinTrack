@@ -40,6 +40,7 @@ import {
   formatDateTime,
 } from '@/lib/date-formatters';
 import { Dialog, Drawer } from '@/components/ui/dialog';
+import { QuantityCorrectionDialog } from '@/components/operations/corrections/quantity-correction-dialog';
 
 interface ClientCenterOption {
   id: string;
@@ -169,6 +170,9 @@ export default function DispatchesPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Auditable Quantity Correction Modal
+  const [correctionTarget, setCorrectionTarget] = useState<DispatchRecord | null>(null);
 
   const [formInvoiceNumber, setFormInvoiceNumber] = useState('');
   const [formClientCenterId, setFormClientCenterId] = useState('');
@@ -818,12 +822,25 @@ export default function DispatchesPage() {
                         ) : null}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => handleOpenDetail(d)}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition"
-                        >
-                          Ficha Técnica
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenDetail(d)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition"
+                          >
+                            Ficha Técnica
+                          </button>
+                          {d.status !== 'RETURNED_TOTAL' && (role === 'ADMIN' || role === 'CONTABILIDAD') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCorrectionTarget(d);
+                              }}
+                              className="text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded border border-amber-200 transition"
+                            >
+                              Corregir
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1342,6 +1359,18 @@ export default function DispatchesPage() {
           </div>
         )}
       </Dialog>
+
+      {/* Modal de Corrección Auditable de Cantidades Despachadas (RN-001) */}
+      {correctionTarget && (
+        <QuantityCorrectionDialog
+          isOpen={!!correctionTarget}
+          onClose={() => setCorrectionTarget(null)}
+          onSuccess={loadData}
+          module="DISPATCH"
+          recordId={correctionTarget.id}
+          recordCode={correctionTarget.invoiceNumber}
+        />
+      )}
     </div>
   );
 }
