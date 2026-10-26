@@ -11,6 +11,10 @@ import { CreateWoodReceiptDto } from './dto/create-wood-receipt.dto';
 import { QueryWoodReceiptDto } from './dto/query-wood-receipt.dto';
 import { CorrectWoodReceiptDto } from './dto/correct-wood-receipt.dto';
 import { validateCorrectionReason } from '../../common/utils/correction-reason.validator';
+import {
+  calculateCorrectionPayloadHash,
+  verifyIdempotencyMatch,
+} from '../../common/security/idempotency.util';
 
 @Injectable()
 export class WoodReceiptsService {
@@ -271,9 +275,11 @@ export class WoodReceiptsService {
       });
     }
 
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const isAll = query.limit !== undefined && Number(query.limit) === 0;
+    const safePage = isAll ? 1 : Math.max(1, Number(page) || 1);
+    const safeLimit = isAll ? undefined : Math.min(100, Math.max(1, Number(limit) || 10));
+    const skip = isAll ? undefined : (safePage - 1) * (safeLimit as number);
+    const take = safeLimit;
     const where: Prisma.WoodReceiptWhereInput = {};
 
     if (supplierId) {
@@ -321,15 +327,15 @@ export class WoodReceiptsService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = isAll ? 1 : Math.ceil(total / (safeLimit as number)) || 1;
 
     return {
       success: true,
       data: receipts,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: safePage,
+        limit: isAll ? total : (safeLimit as number),
         totalPages,
       },
     };
@@ -432,8 +438,30 @@ export class WoodReceiptsService {
     // 1. Mandatory Reason Validation (10-500 chars, blacklist filtered)
     const validatedReason = validateCorrectionReason(dto.reason);
 
-    // 2. Idempotency Check
+    // 2. Canonical Payload Hash Calculation & Pre-Transaction Idempotency Check
+    let incomingHash: string | null = null;
     if (dto.idempotencyKey) {
+      const receiptMeta = await this.prisma.woodReceipt.findUnique({
+        where: { id },
+        select: { id: true, woodType: { select: { name: true } } },
+      });
+      if (receiptMeta) {
+        incomingHash = calculateCorrectionPayloadHash(
+          CorrectionModule.WOOD_RECEIPT,
+          id,
+          validatedReason,
+          {
+            type: 'WOOD_RECEIPT',
+            data: {
+              woodTypeName: receiptMeta.woodType.name,
+              quantity: dto.quantity,
+              yugosQuantity: dto.yugosQuantity,
+              reglasQuantity: dto.reglasQuantity,
+            },
+          },
+        );
+      }
+
       const existing = await this.prisma.quantityCorrection.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
         include: {
@@ -444,7 +472,9 @@ export class WoodReceiptsService {
         },
       });
       if (existing) {
-        if (existing.recordId && existing.recordId !== id) {
+        if (incomingHash) {
+          verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+        } else if (existing.recordId && existing.recordId !== id) {
           throw new ConflictException({
             code: 'IDEMPOTENCY_KEY_REUSED',
             message: 'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
@@ -461,14 +491,11 @@ export class WoodReceiptsService {
     }
 
     // 3. Atomically execute update within database transaction
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // Concurrency protection: row lock on wood receipt record
       if (typeof (tx as any).$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM wood_receipts WHERE id = ${id}::uuid FOR UPDATE`;
-        } catch {
-          // Fallback if raw query execution is not supported in the active client/mock
-        }
+        await tx.$queryRaw`SELECT id FROM wood_receipts WHERE id = ${id}::uuid FOR UPDATE`;
       }
 
       // Fetch target record with relations
@@ -489,6 +516,23 @@ export class WoodReceiptsService {
           code: 'RESOURCE_NOT_FOUND',
           message: `Recepción de madera con ID '${id}' no encontrada`,
         });
+      }
+
+      if (dto.idempotencyKey && !incomingHash) {
+        incomingHash = calculateCorrectionPayloadHash(
+          CorrectionModule.WOOD_RECEIPT,
+          id,
+          validatedReason,
+          {
+            type: 'WOOD_RECEIPT',
+            data: {
+              woodTypeName: receipt.woodType.name,
+              quantity: dto.quantity,
+              yugosQuantity: dto.yugosQuantity,
+              reglasQuantity: dto.reglasQuantity,
+            },
+          },
+        );
       }
 
       const isTimbre = receipt.woodType.name === WoodTypeEnum.TIMBRE;
@@ -522,9 +566,40 @@ export class WoodReceiptsService {
 
         const prevQty = Number(receipt.quantity);
         if (Math.abs(newQty - prevQty) < 0.0001) {
+          if (dto.idempotencyKey) {
+            const existing = await tx.quantityCorrection.findUnique({
+              where: { idempotencyKey: dto.idempotencyKey },
+              include: {
+                items: true,
+                correctedBy: {
+                  select: { id: true, fullName: true, email: true, role: true },
+                },
+              },
+            });
+            if (existing) {
+              if (incomingHash) {
+                verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+              } else if (existing.recordId && existing.recordId !== id) {
+                throw new ConflictException({
+                  code: 'IDEMPOTENCY_KEY_REUSED',
+                  message:
+                    'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
+                });
+              }
+              const currentReceipt = await tx.woodReceipt.findUnique({ where: { id } });
+              return {
+                success: true,
+                message:
+                  'Operación idempotente: la corrección ya fue registrada previamente.',
+                data: currentReceipt,
+                correction: existing,
+              };
+            }
+          }
           throw new BadRequestException({
             code: 'NO_CHANGES_DETECTED',
-            message: 'La cantidad ingresada es idéntica a la registrada actualmente. No se detectaron cambios.',
+            message:
+              'La cantidad ingresada es idéntica a la registrada actualmente. No se detectaron cambios.',
           });
         }
 
@@ -572,9 +647,40 @@ export class WoodReceiptsService {
         const reglasChanged = newReglas !== prevReglas;
 
         if (!yugosChanged && !reglasChanged) {
+          if (dto.idempotencyKey) {
+            const existing = await tx.quantityCorrection.findUnique({
+              where: { idempotencyKey: dto.idempotencyKey },
+              include: {
+                items: true,
+                correctedBy: {
+                  select: { id: true, fullName: true, email: true, role: true },
+                },
+              },
+            });
+            if (existing) {
+              if (incomingHash) {
+                verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+              } else if (existing.recordId && existing.recordId !== id) {
+                throw new ConflictException({
+                  code: 'IDEMPOTENCY_KEY_REUSED',
+                  message:
+                    'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
+                });
+              }
+              const currentReceipt = await tx.woodReceipt.findUnique({ where: { id } });
+              return {
+                success: true,
+                message:
+                  'Operación idempotente: la corrección ya fue registrada previamente.',
+                data: currentReceipt,
+                correction: existing,
+              };
+            }
+          }
           throw new BadRequestException({
             code: 'NO_CHANGES_DETECTED',
-            message: 'Los valores de yugos y reglas son idénticos a los actuales. No se detectaron cambios.',
+            message:
+              'Los valores de yugos y reglas son idénticos a los actuales. No se detectaron cambios.',
           });
         }
 
@@ -637,6 +743,7 @@ export class WoodReceiptsService {
           reason: validatedReason,
           correctedById: userId,
           idempotencyKey: dto.idempotencyKey || null,
+          payloadHash: dto.idempotencyKey ? incomingHash : null,
           metadata: {
             woodType: receipt.woodType.name,
             linkedProductionsCount: linkedLots.length,
@@ -690,6 +797,53 @@ export class WoodReceiptsService {
         correction,
       };
     });
+    } catch (error) {
+      if (
+        dto.idempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const metaTarget = error.meta?.target;
+        const targetList = Array.isArray(metaTarget)
+          ? (metaTarget as string[])
+          : typeof metaTarget === 'string'
+            ? [metaTarget]
+            : [];
+
+        const isExplicitlyOther = targetList.some(
+          (t) =>
+            t !== '(not available)' &&
+            !t.toLowerCase().includes('idempotency') &&
+            !t.toLowerCase().includes('quantity_correction'),
+        );
+
+        if (!isExplicitlyOther) {
+          const existing = await this.prisma.quantityCorrection.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: {
+              items: true,
+              correctedBy: {
+                select: { id: true, fullName: true, email: true, role: true },
+              },
+            },
+          });
+          if (existing) {
+            if (incomingHash) {
+              verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+            }
+            const currentReceipt = await this.prisma.woodReceipt.findUnique({ where: { id } });
+            return {
+              success: true,
+              message:
+                'Operación idempotente: la corrección ya fue registrada previamente.',
+              data: currentReceipt,
+              correction: existing,
+            };
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   /**

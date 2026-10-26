@@ -50,9 +50,11 @@ export class UsersService {
 
   async findAll(query: QueryUsersDto) {
     const { role, isActive, search, page = 1, limit = 10 } = query;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const isAll = query.limit !== undefined && Number(query.limit) === 0;
+    const safePage = isAll ? 1 : Math.max(1, Number(page) || 1);
+    const safeLimit = isAll ? undefined : Math.min(100, Math.max(1, Number(limit) || 10));
+    const skip = isAll ? undefined : (safePage - 1) * (safeLimit as number);
+    const take = safeLimit;
 
     const where: Prisma.UserWhereInput = {};
 
@@ -90,15 +92,15 @@ export class UsersService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = isAll ? 1 : Math.ceil(total / (safeLimit as number)) || 1;
 
     return {
       success: true,
       data: users,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: safePage,
+        limit: isAll ? total : (safeLimit as number),
         totalPages,
       },
     };

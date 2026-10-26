@@ -2,9 +2,25 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { runQaPreBootstrapGuard, isQaProfile } from './common/security/qa-isolation.guard';
 
 async function bootstrap() {
   const logger = new Logger('PolinTrackBootstrap');
+
+  // QA Pre-Bootstrap Zero-Trust Isolation Guard (QA-06C-ENV-02)
+  // Executes strictly BEFORE NestFactory.create(AppModule) and Prisma initialization
+  if (isQaProfile(process.env, process.argv)) {
+    try {
+      runQaPreBootstrapGuard(process.env, process.argv);
+      logger.log(
+        '🛡️ [QA ISOLATION GUARD] Pre-bootstrap verification PASSED: Local QA environment (127.0.0.1:5433/polintrack_test) strictly validated.',
+      );
+    } catch (error: any) {
+      logger.error(`🚨 [QA ISOLATION GUARD ABORT]: ${error.message}`);
+      process.exit(1);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // Global Prefix: /api/v1 (per Phase 3 API Contract)

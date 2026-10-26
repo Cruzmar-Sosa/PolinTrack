@@ -403,11 +403,11 @@ export class FumigationService {
    * Consulta paginada y filtrada de tratamientos fitosanitarios (EP-FUM-02 / UC-FUM-02).
    */
   async findAll(query: QueryFumigationDto): Promise<PaginatedFumigationResponseDto> {
-    const page = Math.max(1, query.page || 1);
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const isAll = query.limit !== undefined && Number(query.limit) === 0;
+    const safePage = isAll ? 1 : Math.max(1, Number(query.page) || 1);
+    const safeLimit = isAll ? undefined : Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = isAll ? undefined : (safePage - 1) * (safeLimit as number);
+    const take = safeLimit;
 
     const where: any = {};
 
@@ -501,7 +501,7 @@ export class FumigationService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = isAll ? 1 : Math.ceil(total / (safeLimit as number)) || 1;
     const formattedData = fumigations.map((f) => ({
       ...f,
       dailyProduction: this.formatDailyProduction(f.dailyProduction),
@@ -512,8 +512,8 @@ export class FumigationService {
       data: formattedData as any,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: safePage,
+        limit: isAll ? total : (safeLimit as number),
         totalPages,
       },
     };

@@ -4,6 +4,7 @@ import {
   IsISO8601,
   IsOptional,
   IsUUID,
+  Max,
   Min,
   Validate,
   ValidationArguments,
@@ -99,13 +100,15 @@ export class QueryInventoryAdjustmentDto {
   page?: number = 1;
 
   @ApiPropertyOptional({
-    description: 'Cantidad de registros por página (0 para Todas)',
+    description: 'Cantidad de registros por página (0 = lista completa sin paginar, o entre 1 y 100)',
     default: 10,
     minimum: 0,
+    maximum: 100,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'El límite debe ser un número entero' })
   @Min(0, { message: 'El límite debe ser mayor o igual a 0' })
+  @Max(100, { message: 'El límite máximo permitido por página es 100' })
   limit?: number = 10;
 }

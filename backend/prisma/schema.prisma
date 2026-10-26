@@ -503,6 +503,7 @@ model QuantityCorrection {
   reason         String           @db.VarChar(500)
   correctedById  String           @map("corrected_by_id") @db.Uuid
   idempotencyKey String?          @unique @map("idempotency_key") @db.VarChar(100)
+  payloadHash    String?          @map("payload_hash") @db.VarChar(64)
   metadata       Json?            @map("metadata")
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
 

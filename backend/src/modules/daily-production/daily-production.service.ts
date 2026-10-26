@@ -16,6 +16,10 @@ import { QueryDailyProductionDto } from './dto/query-daily-production.dto';
 import { CorrectDailyProductionDto } from './dto/correct-daily-production.dto';
 import { validateCorrectionReason } from '../../common/utils/correction-reason.validator';
 import { getISOWeek } from './utils/iso-week.util';
+import {
+  calculateCorrectionPayloadHash,
+  verifyIdempotencyMatch,
+} from '../../common/security/idempotency.util';
 
 @Injectable()
 export class DailyProductionService {
@@ -352,9 +356,11 @@ export class DailyProductionService {
       });
     }
 
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const isAll = query.limit !== undefined && Number(query.limit) === 0;
+    const safePage = isAll ? 1 : Math.max(1, Number(page) || 1);
+    const safeLimit = isAll ? undefined : Math.min(100, Math.max(1, Number(limit) || 10));
+    const skip = isAll ? undefined : (safePage - 1) * (safeLimit as number);
+    const take = safeLimit;
     const where: Prisma.DailyProductionWhereInput = {};
 
     if (productId) {
@@ -415,7 +421,7 @@ export class DailyProductionService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = isAll ? 1 : Math.ceil(total / (safeLimit as number)) || 1;
 
     const formattedData = items.map((item) => {
       const details = (item.productionDetails || []).map((pd) => ({
@@ -463,8 +469,8 @@ export class DailyProductionService {
       data: formattedData,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: safePage,
+        limit: isAll ? total : (safeLimit as number),
         totalPages,
       },
     };
@@ -688,7 +694,15 @@ export class DailyProductionService {
     // 1. Mandatory Reason Validation (10-500 chars, blacklist filtered)
     const validatedReason = validateCorrectionReason(dto.reason);
 
-    // 2. Idempotency Check
+    // 2. Canonical Payload Hash Calculation
+    const incomingHash = calculateCorrectionPayloadHash(
+      CorrectionModule.DAILY_PRODUCTION,
+      id,
+      validatedReason,
+      { type: 'DAILY_PRODUCTION', items: dto.items },
+    );
+
+    // 3. Idempotency Check
     if (dto.idempotencyKey) {
       const existing = await this.prisma.quantityCorrection.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
@@ -700,12 +714,7 @@ export class DailyProductionService {
         },
       });
       if (existing) {
-        if (existing.recordId && existing.recordId !== id) {
-          throw new ConflictException({
-            code: 'IDEMPOTENCY_KEY_REUSED',
-            message: 'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
-          });
-        }
+        verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
         const item = await this.findOne(id);
         return {
           success: true,
@@ -717,14 +726,11 @@ export class DailyProductionService {
     }
 
     // 3. Atomically execute update within database transaction
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // Concurrency protection: row lock on operational header to prevent race conditions
       if (typeof (tx as any).$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM daily_productions WHERE id = ${id}::uuid FOR UPDATE`;
-        } catch {
-          // Fallback if raw query execution is not supported in the active client/mock
-        }
+        await tx.$queryRaw`SELECT id FROM daily_productions WHERE id = ${id}::uuid FOR UPDATE`;
       }
 
       const production = await tx.dailyProduction.findUnique({
@@ -760,6 +766,23 @@ export class DailyProductionService {
             code: 'INVALID_LINE_ID',
             message: `La línea con ID '${itemDto.lineId}' no pertenece a la orden de producción '${production.productionLot}'.`,
           });
+        }
+      }
+
+      // Concurrency protection: Bloqueo pesimista determinístico sobre todos los productos afectados (H-03)
+      const affectedProductIds = new Set<string>();
+      for (const itemDto of dto.items) {
+        const detail = detailMap.get(itemDto.lineId)!;
+        affectedProductIds.add(detail.productId);
+        if (itemDto.productId) {
+          affectedProductIds.add(itemDto.productId);
+        }
+      }
+      const sortedProductIds = [...affectedProductIds].sort();
+
+      if (typeof (tx as any).$queryRaw === 'function') {
+        for (const prodId of sortedProductIds) {
+          await tx.$queryRaw`SELECT id FROM products WHERE id = ${prodId}::uuid FOR UPDATE`;
         }
       }
 
@@ -1054,9 +1077,35 @@ export class DailyProductionService {
       }
 
       if (!hasActualChange) {
+        if (dto.idempotencyKey) {
+          const existing = await tx.quantityCorrection.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: {
+              items: true,
+              correctedBy: {
+                select: { id: true, fullName: true, email: true, role: true },
+              },
+            },
+          });
+          if (existing) {
+            verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+            return {
+              success: true,
+              message:
+                'Operación idempotente: la corrección ya fue registrada previamente.',
+              data: {
+                id: production.id,
+                productionLot: production.productionLot,
+                quantityProduced: production.quantityProduced,
+              },
+              correction: existing,
+            };
+          }
+        }
         throw new BadRequestException({
           code: 'NO_CHANGES_DETECTED',
-          message: 'Las cantidades y medidas ingresadas son idénticas a las registradas actualmente. No se detectaron cambios.',
+          message:
+            'Las cantidades y medidas ingresadas son idénticas a las registradas actualmente. No se detectaron cambios.',
         });
       }
 
@@ -1080,6 +1129,7 @@ export class DailyProductionService {
           reason: validatedReason,
           correctedById: userId,
           idempotencyKey: dto.idempotencyKey || null,
+          payloadHash: dto.idempotencyKey ? incomingHash : null,
           metadata: {
             previousHeaderTotal: production.quantityProduced,
             newHeaderTotal,
@@ -1149,6 +1199,51 @@ export class DailyProductionService {
         correction,
       };
     });
+    } catch (error) {
+      if (
+        dto.idempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const metaTarget = error.meta?.target;
+        const targetList = Array.isArray(metaTarget)
+          ? (metaTarget as string[])
+          : typeof metaTarget === 'string'
+            ? [metaTarget]
+            : [];
+
+        const isExplicitlyOther = targetList.some(
+          (t) =>
+            t !== '(not available)' &&
+            !t.toLowerCase().includes('idempotency') &&
+            !t.toLowerCase().includes('quantity_correction'),
+        );
+
+        if (!isExplicitlyOther) {
+          const existing = await this.prisma.quantityCorrection.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: {
+              items: true,
+              correctedBy: {
+                select: { id: true, fullName: true, email: true, role: true },
+              },
+            },
+          });
+          if (existing) {
+            verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+            const item = await this.findOne(id);
+            return {
+              success: true,
+              message:
+                'Operación idempotente: la corrección ya fue registrada previamente.',
+              data: item.data,
+              correction: existing,
+            };
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   /**

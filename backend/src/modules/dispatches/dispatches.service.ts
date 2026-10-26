@@ -13,6 +13,10 @@ import { QueryDispatchDto } from './dto/query-dispatch.dto';
 import { PaginatedDispatchResponseDto } from './dto/dispatch-response.dto';
 import { CorrectDispatchDto } from './dto/correct-dispatch.dto';
 import { validateCorrectionReason } from '../../common/utils/correction-reason.validator';
+import {
+  calculateCorrectionPayloadHash,
+  verifyIdempotencyMatch,
+} from '../../common/security/idempotency.util';
 
 @Injectable()
 export class DispatchesService {
@@ -243,11 +247,11 @@ export class DispatchesService {
    * Consulta paginada y filtrada de despachos comerciales (EP-DSP-02 / UC-DSP-02).
    */
   async findAll(query: QueryDispatchDto): Promise<PaginatedDispatchResponseDto> {
-    const page = Math.max(1, query.page || 1);
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const isAll = query.limit !== undefined && Number(query.limit) === 0;
+    const safePage = isAll ? 1 : Math.max(1, Number(query.page) || 1);
+    const safeLimit = isAll ? undefined : Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = isAll ? undefined : (safePage - 1) * (safeLimit as number);
+    const take = safeLimit;
 
     const where: any = {};
 
@@ -336,15 +340,15 @@ export class DispatchesService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = isAll ? 1 : Math.ceil(total / (safeLimit as number)) || 1;
 
     return {
       success: true,
       data: dispatches as any,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: safePage,
+        limit: isAll ? total : (safeLimit as number),
         totalPages,
       },
     };
@@ -511,7 +515,15 @@ export class DispatchesService {
     // 1. Mandatory Reason Validation (10-500 chars, blacklist filtered)
     const validatedReason = validateCorrectionReason(dto.reason);
 
-    // 2. Idempotency Check
+    // 2. Canonical Payload Hash Calculation
+    const incomingHash = calculateCorrectionPayloadHash(
+      CorrectionModule.DISPATCH,
+      id,
+      validatedReason,
+      { type: 'DISPATCH', items: dto.items },
+    );
+
+    // 3. Idempotency Check
     if (dto.idempotencyKey) {
       const existing = await this.prisma.quantityCorrection.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
@@ -523,12 +535,7 @@ export class DispatchesService {
         },
       });
       if (existing) {
-        if (existing.recordId && existing.recordId !== id) {
-          throw new ConflictException({
-            code: 'IDEMPOTENCY_KEY_REUSED',
-            message: 'La clave de idempotencia ya fue utilizada para un registro operativo diferente.',
-          });
-        }
+        verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
         const res = await this.findOne(id);
         return {
           success: true,
@@ -540,14 +547,11 @@ export class DispatchesService {
     }
 
     // 3. Atomically execute update within database transaction
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // Concurrency protection: row lock on operational header to prevent race conditions
       if (typeof (tx as any).$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM dispatch_headers WHERE id = ${id}::uuid FOR UPDATE`;
-        } catch {
-          // Fallback if raw query execution is not supported in the active client/mock
-        }
+        await tx.$queryRaw`SELECT id FROM dispatch_headers WHERE id = ${id}::uuid FOR UPDATE`;
       }
 
       const dispatch = await tx.dispatchHeader.findUnique({
@@ -583,6 +587,23 @@ export class DispatchesService {
             code: 'INVALID_LINE_ID',
             message: `La línea con ID '${itemDto.lineId}' no pertenece a la remisión/factura '${dispatch.invoiceNumber}'.`,
           });
+        }
+      }
+
+      // Concurrency protection: Bloqueo pesimista determinístico sobre todos los productos afectados (H-03)
+      const affectedProductIds = new Set<string>();
+      for (const itemDto of dto.items) {
+        const detail = detailMap.get(itemDto.lineId)!;
+        affectedProductIds.add(detail.productId);
+        if (itemDto.productId) {
+          affectedProductIds.add(itemDto.productId);
+        }
+      }
+      const sortedProductIds = [...affectedProductIds].sort();
+
+      if (typeof (tx as any).$queryRaw === 'function') {
+        for (const prodId of sortedProductIds) {
+          await tx.$queryRaw`SELECT id FROM products WHERE id = ${prodId}::uuid FOR UPDATE`;
         }
       }
 
@@ -812,9 +833,34 @@ export class DispatchesService {
       }
 
       if (!hasActualChange) {
+        if (dto.idempotencyKey) {
+          const existing = await tx.quantityCorrection.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: {
+              items: true,
+              correctedBy: {
+                select: { id: true, fullName: true, email: true, role: true },
+              },
+            },
+          });
+          if (existing) {
+            verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+            return {
+              success: true,
+              message:
+                'Operación idempotente: la corrección ya fue registrada previamente.',
+              data: {
+                id: dispatch.id,
+                invoiceNumber: dispatch.invoiceNumber,
+              },
+              correction: existing,
+            };
+          }
+        }
         throw new BadRequestException({
           code: 'NO_CHANGES_DETECTED',
-          message: 'Las cantidades y medidas ingresadas son idénticas a las registradas actualmente. No se detectaron cambios.',
+          message:
+            'Las cantidades y medidas ingresadas son idénticas a las registradas actualmente. No se detectaron cambios.',
         });
       }
 
@@ -827,6 +873,7 @@ export class DispatchesService {
           reason: validatedReason,
           correctedById: userId,
           idempotencyKey: dto.idempotencyKey || null,
+          payloadHash: dto.idempotencyKey ? incomingHash : null,
           metadata: {
             linesModifiedCount: itemsToRecord.length,
             productReclassifications:
@@ -891,6 +938,51 @@ export class DispatchesService {
         correction,
       };
     });
+    } catch (error) {
+      if (
+        dto.idempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const metaTarget = error.meta?.target;
+        const targetList = Array.isArray(metaTarget)
+          ? (metaTarget as string[])
+          : typeof metaTarget === 'string'
+            ? [metaTarget]
+            : [];
+
+        const isExplicitlyOther = targetList.some(
+          (t) =>
+            t !== '(not available)' &&
+            !t.toLowerCase().includes('idempotency') &&
+            !t.toLowerCase().includes('quantity_correction'),
+        );
+
+        if (!isExplicitlyOther) {
+          const existing = await this.prisma.quantityCorrection.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: {
+              items: true,
+              correctedBy: {
+                select: { id: true, fullName: true, email: true, role: true },
+              },
+            },
+          });
+          if (existing) {
+            verifyIdempotencyMatch(existing, id, incomingHash, this.logger);
+            const res = await this.findOne(id);
+            return {
+              success: true,
+              message:
+                'Operación idempotente: la corrección ya fue registrada previamente.',
+              data: res.data,
+              correction: existing,
+            };
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   /**
