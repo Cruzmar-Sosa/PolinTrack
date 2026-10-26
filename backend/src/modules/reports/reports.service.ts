@@ -31,11 +31,10 @@ export class ReportsService {
     query: QueryWoodReceiptsReportDto,
   ): Promise<WoodReceiptsReportResponseDto> {
     const { start, end } = validateDateRange(query.startDate, query.endDate);
-    const page = query.page ?? 1;
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const safePage = Math.max(1, Number(query.page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
     const where: Prisma.WoodReceiptWhereInput = {};
 
@@ -95,9 +94,9 @@ export class ReportsService {
       data,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
-        totalPages: isAll ? 1 : Math.ceil(total / limit) || 1,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit) || 1,
       },
     };
   }
@@ -110,11 +109,10 @@ export class ReportsService {
     query: QueryDispatchesReportDto,
   ): Promise<DispatchesReportResponseDto> {
     const { start, end } = validateDateRange(query.startDate, query.endDate);
-    const page = query.page ?? 1;
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const safePage = Math.max(1, Number(query.page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
     const where: Prisma.DispatchDetailWhereInput = {};
 
@@ -203,9 +201,9 @@ export class ReportsService {
       data,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
-        totalPages: isAll ? 1 : Math.ceil(total / limit) || 1,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit) || 1,
       },
     };
   }
@@ -383,11 +381,10 @@ export class ReportsService {
     query: QueryDailyProductionsReportDto,
   ): Promise<DailyProductionsReportResponseDto> {
     const { start, end } = validateDateRange(query.startDate, query.endDate);
-    const page = query.page ?? 1;
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const safePage = Math.max(1, Number(query.page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
     const where: Prisma.DailyProductionWhereInput = {};
 
@@ -464,9 +461,9 @@ export class ReportsService {
       data,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
-        totalPages: isAll ? 1 : Math.ceil(total / limit) || 1,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit) || 1,
       },
     };
   }
@@ -479,11 +476,10 @@ export class ReportsService {
     query: QueryFumigationsReportDto,
   ): Promise<FumigationsReportResponseDto> {
     const { start, end } = validateDateRange(query.startDate, query.endDate);
-    const page = query.page ?? 1;
-    const limit = query.limit !== undefined ? Number(query.limit) : 10;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const safePage = Math.max(1, Number(query.page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
     const where: Prisma.FumigationWhereInput = {};
 
@@ -579,9 +575,9 @@ export class ReportsService {
       data,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
-        totalPages: isAll ? 1 : Math.ceil(total / limit) || 1,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit) || 1,
       },
     };
   }
@@ -589,103 +585,176 @@ export class ReportsService {
   /**
    * REPORTE 6: Movimientos por Centro de Distribución (EP-REP-06 / UC-REP-01 / REQ-FUNC-095).
    * Desglosa para cada una de las 7 plantas cliente los despachos, devoluciones y neto entregado.
+   * Optimizado en QA-06E-02: Agregación delegada a PostgreSQL mediante $queryRaw y Prisma.sql con paginación determinista.
    */
   async getDistributionCentersReport(
     query: QueryDistributionCentersReportDto,
   ): Promise<DistributionCentersReportResponseDto> {
     const { start, end } = validateDateRange(query.startDate, query.endDate);
 
-    const clientCenters = await this.prisma.clientCenter.findMany({
-      where: {
-        isActive: true,
-        ...(query.clientCenterId ? { id: query.clientCenterId } : {}),
-      },
-      orderBy: { name: 'asc' },
-    });
+    const safePage = Math.max(1, Number(query.page) || 1);
+    const rawLimit =
+      query.limit !== undefined && query.limit !== null
+        ? Number(query.limit)
+        : 50;
+    const safeLimit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit));
+    const skip = (safePage - 1) * safeLimit;
+    const take = safeLimit;
 
-    const whereDispatch: Prisma.DispatchHeaderWhereInput = {};
-    if (start || end) {
-      whereDispatch.dispatchDate = {
-        ...(start ? { gte: start } : {}),
-        ...(end ? { lte: end } : {}),
-      };
+    // Filtros de fecha parametrizados y seguros
+    const dateConditions: Prisma.Sql[] = [];
+    if (start) {
+      dateConditions.push(Prisma.sql`dh.dispatch_date >= ${start}::date`);
+    }
+    if (end) {
+      dateConditions.push(Prisma.sql`dh.dispatch_date <= ${end}::date`);
     }
 
-    const dispatchHeaders = await this.prisma.dispatchHeader.findMany({
-      where: whereDispatch,
-      include: {
-        dispatchDetails: {
-          include: {
-            returnDetails: true,
-          },
-        },
-      },
-    });
+    const dateWhere =
+      dateConditions.length > 0
+        ? Prisma.sql`AND ${Prisma.join(dateConditions, ' AND ')}`
+        : Prisma.empty;
 
-    // Mapeo de métricas por centro cliente
-    const centerMetrics = new Map<
-      string,
-      {
-        totalDispatched: number;
-        totalReturned: number;
-        invoices: Set<string>;
-      }
-    >();
+    const centerCondition = query.clientCenterId
+      ? Prisma.sql`AND cc.id = ${query.clientCenterId}::uuid`
+      : Prisma.empty;
 
-    for (const dh of dispatchHeaders) {
-      const ccId = dh.clientCenterId;
-      if (!centerMetrics.has(ccId)) {
-        centerMetrics.set(ccId, {
-          totalDispatched: 0,
-          totalReturned: 0,
-          invoices: new Set<string>(),
-        });
-      }
-      const metric = centerMetrics.get(ccId)!;
-      metric.invoices.add(dh.invoiceNumber);
+    const headerCenterCondition = query.clientCenterId
+      ? Prisma.sql`AND dh.client_center_id = ${query.clientCenterId}::uuid`
+      : Prisma.empty;
 
-      for (const dd of dh.dispatchDetails) {
-        metric.totalDispatched += dd.quantityDispatched;
-        for (const rd of dd.returnDetails) {
-          metric.totalReturned += rd.quantityReturned;
-        }
-      }
-    }
+    // Ejecución paralela en PostgreSQL de la página solicitada y el resumen global
+    const [rows, summaryResult] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{
+          clientCenterId: string;
+          clientCenterName: string;
+          totalDispatched: number;
+          totalReturned: number;
+          netDelivered: number;
+          invoicesCount: number;
+        }>
+      >(Prisma.sql`
+        WITH detail_returns AS (
+          SELECT 
+            dispatch_detail_id, 
+            COALESCE(SUM(quantity_returned), 0)::int AS total_returned
+          FROM return_details
+          GROUP BY dispatch_detail_id
+        ),
+        header_metrics AS (
+          SELECT 
+            dh.id AS header_id,
+            dh.client_center_id,
+            dh.invoice_number,
+            dh.dispatch_date,
+            COALESCE(SUM(dd.quantity_dispatched), 0)::int AS dispatched_qty,
+            COALESCE(SUM(dr.total_returned), 0)::int AS returned_qty
+          FROM dispatch_headers dh
+          LEFT JOIN dispatch_details dd ON dd.dispatch_header_id = dh.id
+          LEFT JOIN detail_returns dr ON dr.dispatch_detail_id = dd.id
+          WHERE 1=1 ${dateWhere} ${headerCenterCondition}
+          GROUP BY dh.id, dh.client_center_id, dh.invoice_number, dh.dispatch_date
+        )
+        SELECT 
+          cc.id AS "clientCenterId",
+          cc.name AS "clientCenterName",
+          COALESCE(SUM(hm.dispatched_qty), 0)::int AS "totalDispatched",
+          COALESCE(SUM(hm.returned_qty), 0)::int AS "totalReturned",
+          (COALESCE(SUM(hm.dispatched_qty), 0) - COALESCE(SUM(hm.returned_qty), 0))::int AS "netDelivered",
+          COUNT(DISTINCT hm.invoice_number)::int AS "invoicesCount"
+        FROM client_centers cc
+        LEFT JOIN header_metrics hm ON hm.client_center_id = cc.id
+        WHERE cc.is_active = true ${centerCondition}
+        GROUP BY cc.id, cc.name
+        ORDER BY cc.name ASC, cc.id ASC
+        LIMIT ${take} OFFSET ${skip};
+      `),
+      this.prisma.$queryRaw<
+        Array<{
+          totalCenters: number;
+          summaryDispatched: number;
+          summaryReturned: number;
+          summaryNet: number;
+          summaryInvoices: number;
+        }>
+      >(Prisma.sql`
+        WITH detail_returns AS (
+          SELECT 
+            dispatch_detail_id, 
+            COALESCE(SUM(quantity_returned), 0)::int AS total_returned
+          FROM return_details
+          GROUP BY dispatch_detail_id
+        ),
+        header_metrics AS (
+          SELECT 
+            dh.id AS header_id,
+            dh.client_center_id,
+            dh.invoice_number,
+            dh.dispatch_date,
+            COALESCE(SUM(dd.quantity_dispatched), 0)::int AS dispatched_qty,
+            COALESCE(SUM(dr.total_returned), 0)::int AS returned_qty
+          FROM dispatch_headers dh
+          LEFT JOIN dispatch_details dd ON dd.dispatch_header_id = dh.id
+          LEFT JOIN detail_returns dr ON dr.dispatch_detail_id = dd.id
+          WHERE 1=1 ${dateWhere} ${headerCenterCondition}
+          GROUP BY dh.id, dh.client_center_id, dh.invoice_number, dh.dispatch_date
+        ),
+        center_aggregates AS (
+          SELECT 
+            cc.id,
+            COALESCE(SUM(hm.dispatched_qty), 0)::int AS center_dispatched,
+            COALESCE(SUM(hm.returned_qty), 0)::int AS center_returned,
+            COUNT(DISTINCT hm.invoice_number)::int AS center_invoices
+          FROM client_centers cc
+          LEFT JOIN header_metrics hm ON hm.client_center_id = cc.id
+          WHERE cc.is_active = true ${centerCondition}
+          GROUP BY cc.id
+        )
+        SELECT 
+          COUNT(*)::int AS "totalCenters",
+          COALESCE(SUM(center_dispatched), 0)::int AS "summaryDispatched",
+          COALESCE(SUM(center_returned), 0)::int AS "summaryReturned",
+          (COALESCE(SUM(center_dispatched), 0) - COALESCE(SUM(center_returned), 0))::int AS "summaryNet",
+          COALESCE(SUM(center_invoices), 0)::int AS "summaryInvoices"
+        FROM center_aggregates;
+      `),
+    ]);
 
-    let summaryDispatched = 0;
-    let summaryReturned = 0;
-    let summaryInvoices = 0;
+    const summaryRow = summaryResult[0] || {
+      totalCenters: 0,
+      summaryDispatched: 0,
+      summaryReturned: 0,
+      summaryNet: 0,
+      summaryInvoices: 0,
+    };
 
-    const data = clientCenters.map((cc) => {
-      const metric = centerMetrics.get(cc.id) ?? {
-        totalDispatched: 0,
-        totalReturned: 0,
-        invoices: new Set<string>(),
-      };
+    const total = Number(summaryRow.totalCenters) || 0;
+    const totalPages = Math.ceil(total / safeLimit) || 1;
 
-      const netDelivered = metric.totalDispatched - metric.totalReturned;
-      summaryDispatched += metric.totalDispatched;
-      summaryReturned += metric.totalReturned;
-      summaryInvoices += metric.invoices.size;
-
-      return {
-        clientCenterId: cc.id,
-        clientCenterName: cc.name,
-        totalDispatched: metric.totalDispatched,
-        totalReturned: metric.totalReturned,
-        netDelivered,
-        invoicesCount: metric.invoices.size,
-      };
-    });
+    const data = rows.map((r) => ({
+      clientCenterId: r.clientCenterId,
+      clientCenterName: r.clientCenterName,
+      totalDispatched: Number(r.totalDispatched),
+      totalReturned: Number(r.totalReturned),
+      netDelivered: Number(r.netDelivered),
+      invoicesCount: Number(r.invoicesCount),
+    }));
 
     return {
       success: true,
       data,
       summary: {
-        totalDispatched: summaryDispatched,
-        totalReturned: summaryReturned,
-        netDelivered: summaryDispatched - summaryReturned,
-        totalInvoicesCount: summaryInvoices,
+        totalDispatched: Number(summaryRow.summaryDispatched),
+        totalReturned: Number(summaryRow.summaryReturned),
+        netDelivered: Number(summaryRow.summaryNet),
+        totalInvoicesCount: Number(summaryRow.summaryInvoices),
+      },
+      meta: {
+        total,
+        page: safePage,
+        limit: safeLimit,
+        totalPages,
       },
     };
   }

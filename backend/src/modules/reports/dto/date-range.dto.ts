@@ -32,14 +32,17 @@ export class DateRangeDto {
   page?: number = 1;
 
   @ApiPropertyOptional({
-    description: 'Cantidad de registros por página (0 para Todas)',
+    description: 'Cantidad de registros por página (mínimo 1, máximo 100)',
     example: 10,
     default: 10,
+    minimum: 1,
+    maximum: 100,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'limit debe ser un número entero' })
-  @Min(0, { message: 'limit debe ser al menos 0' })
+  @Min(1, { message: 'limit debe ser al menos 1' })
+  @Max(100, { message: 'El límite máximo permitido por página es 100' })
   limit?: number = 10;
 }
 

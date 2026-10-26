@@ -118,6 +118,38 @@ describe('ReportsService', () => {
           },
         ]),
       },
+      $queryRaw: jest.fn().mockImplementation((queryObj) => {
+        const sqlText = queryObj?.strings ? queryObj.strings.join(' ') : String(queryObj);
+        if (sqlText.includes('totalCenters') || sqlText.includes('center_aggregates')) {
+          return Promise.resolve([
+            {
+              totalCenters: 2,
+              summaryDispatched: 500,
+              summaryReturned: 50,
+              summaryNet: 450,
+              summaryInvoices: 1,
+            },
+          ]);
+        }
+        return Promise.resolve([
+          {
+            clientCenterId: 'cc-1',
+            clientCenterName: 'Planta 1',
+            totalDispatched: 500,
+            totalReturned: 50,
+            netDelivered: 450,
+            invoicesCount: 1,
+          },
+          {
+            clientCenterId: 'cc-2',
+            clientCenterName: 'Planta 2',
+            totalDispatched: 0,
+            totalReturned: 0,
+            netDelivered: 0,
+            invoicesCount: 0,
+          },
+        ]);
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -291,6 +323,51 @@ describe('ReportsService', () => {
       expect(planta1?.totalReturned).toBe(50);
       expect(planta1?.netDelivered).toBe(450);
       expect(planta1?.invoicesCount).toBe(1);
+    });
+
+    it('debe incluir summary global consolidado y metadatos de paginación con límite predeterminado de 50', async () => {
+      const result = await service.getDistributionCentersReport({});
+
+      expect(result.summary).toEqual({
+        totalDispatched: 500,
+        totalReturned: 50,
+        netDelivered: 450,
+        totalInvoicesCount: 1,
+      });
+      expect(result.meta).toEqual({
+        total: 2,
+        page: 1,
+        limit: 50,
+        totalPages: 1,
+      });
+    });
+
+    it('debe respetar parámetros de paginación personalizados (page y limit)', async () => {
+      const result = await service.getDistributionCentersReport({ page: 2, limit: 1 });
+
+      expect(result.meta).toEqual({
+        total: 2,
+        page: 2,
+        limit: 1,
+        totalPages: 2,
+      });
+    });
+
+    it('debe acotar el límite superior a 100 y límite inferior a 1', async () => {
+      const resultMax = await service.getDistributionCentersReport({ limit: 150 });
+      expect(resultMax.meta?.limit).toBe(100);
+
+      const resultMin = await service.getDistributionCentersReport({ page: -1, limit: 0 });
+      expect(resultMin.meta?.page).toBe(1);
+      expect(resultMin.meta?.limit).toBe(1);
+
+      const resultDefault = await service.getDistributionCentersReport({});
+      expect(resultDefault.meta?.limit).toBe(50);
+    });
+
+    it('debe delegar agregaciones a PostgreSQL mediante $queryRaw', async () => {
+      await service.getDistributionCentersReport({ clientCenterId: 'c1b2c3d4-0000-0000-0000-000000000001' });
+      expect((prisma as any).$queryRaw).toHaveBeenCalled();
     });
   });
 

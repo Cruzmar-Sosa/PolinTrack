@@ -351,4 +351,7 @@ export class DistributionCentersReportResponseDto {
     netDelivered: number;
     totalInvoicesCount: number;
   };
+
+  @ApiPropertyOptional({ type: () => PaginationMetaDto })
+  meta?: PaginationMetaDto;
 }
