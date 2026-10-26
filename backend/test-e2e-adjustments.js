@@ -1,4 +1,5 @@
-require('dotenv').config();
+const { enforceE2eIsolation } = require('./test/security/e2e-isolation.guard');
+enforceE2eIsolation();
 const {
   PrismaClient,
   RoleType,
@@ -13,10 +14,12 @@ const { ValidationPipe } = require('@nestjs/common');
 
 const prisma = new PrismaClient();
 
-const jwtSecret =
-  process.env.SUPABASE_JWT_SECRET ||
-  process.env.JWT_SECRET ||
-  'polintrack_jwt_fallback_secret_key_2026';
+const jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET;
+if (!jwtSecret || jwtSecret.trim().length < 16) {
+  throw new Error(
+    'Configuración insegura detectada: Se requiere SUPABASE_JWT_SECRET o JWT_SECRET (mínimo 16 caracteres) para ejecutar los tests E2E.',
+  );
+}
 
 function generateToken(user) {
   return jwt.sign(
