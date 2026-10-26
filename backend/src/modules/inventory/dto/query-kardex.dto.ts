@@ -58,12 +58,15 @@ export class QueryKardexDto {
   page?: number = 1;
 
   @ApiPropertyOptional({
-    description: 'Cantidad de registros por página (0 para Todas)',
+    description: 'Cantidad de registros por página (mínimo 1, máximo 100)',
     default: 10,
+    minimum: 1,
+    maximum: 100,
   })
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
-  @Min(0)
+  @IsInt({ message: 'El límite debe ser un número entero' })
+  @Min(1, { message: 'El límite debe ser al menos 1 registro' })
+  @Max(100, { message: 'El límite no puede exceder 100 registros' })
   limit?: number = 10;
 }

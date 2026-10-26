@@ -289,11 +289,12 @@ export class InventoryLedgerService {
    * @param query Filters for product, movementType, date range, pagination
    */
   async getKardexMovements(query: QueryKardexDto) {
-    const { productId, movementType, startDate, endDate, page = 1, limit = 10 } =
-      query;
-    const isAll = limit === 0 || limit >= 10000;
-    const skip = isAll ? undefined : (page - 1) * limit;
-    const take = isAll ? undefined : limit;
+    const pageNum = Math.max(1, Number(query.page) || 1);
+    const limitNum = Math.min(100, Math.max(1, Number(query.limit) || 10));
+    const skip = (pageNum - 1) * limitNum;
+    const take = limitNum;
+
+    const { productId, movementType, startDate, endDate } = query;
 
     const where: Prisma.InventoryMovementWhereInput = {};
 
@@ -340,15 +341,15 @@ export class InventoryLedgerService {
       }),
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const totalPages = Math.ceil(total / take) || 1;
 
     return {
       success: true,
       data: movements,
       meta: {
         total,
-        page: isAll ? 1 : page,
-        limit: isAll ? total : limit,
+        page: pageNum,
+        limit: take,
         totalPages,
       },
     };
