@@ -11,18 +11,28 @@ import { RolesGuard } from './guards/roles.guard';
 
 @Module({
   imports: [
+    ConfigModule,
     DatabaseModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret:
+      useFactory: (configService: ConfigService) => {
+        const secret =
           configService.get<string>('SUPABASE_JWT_SECRET') ||
-          configService.get<string>('JWT_SECRET') ||
-          'polintrack_jwt_fallback_secret_key_2026',
-        signOptions: { expiresIn: '1h' },
-      }),
+          configService.get<string>('JWT_SECRET');
+
+        if (!secret || secret.trim().length < 16) {
+          throw new Error(
+            'Configuración insegura detectada: Se requiere SUPABASE_JWT_SECRET o JWT_SECRET (mínimo 16 caracteres) para la inicialización segura del módulo de autenticación JWT.',
+          );
+        }
+
+        return {
+          secret: secret.trim(),
+          signOptions: { expiresIn: '1h' },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

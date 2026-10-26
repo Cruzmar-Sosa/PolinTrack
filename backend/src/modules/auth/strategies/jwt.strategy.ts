@@ -20,13 +20,18 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   ) {
     const jwtSecret =
       configService.get<string>('SUPABASE_JWT_SECRET') ||
-      configService.get<string>('JWT_SECRET') ||
-      'polintrack_jwt_fallback_secret_key_2026';
+      configService.get<string>('JWT_SECRET');
+
+    if (!jwtSecret || jwtSecret.trim().length < 16) {
+      throw new Error(
+        'Configuración insegura detectada: Se requiere SUPABASE_JWT_SECRET o JWT_SECRET (mínimo 16 caracteres) para la inicialización de JwtStrategy.',
+      );
+    }
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: jwtSecret,
+      secretOrKey: jwtSecret.trim(),
     });
   }
 

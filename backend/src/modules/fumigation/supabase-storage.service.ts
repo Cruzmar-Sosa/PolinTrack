@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -39,10 +40,11 @@ export class SupabaseStorageService {
       'fumigation-certificates',
     );
 
-    this.hmacSecret =
+    const configuredSecret =
+      this.configService.get<string>('STORAGE_HMAC_SECRET') ||
       this.configService.get<string>('JWT_SECRET') ||
       this.configService.get<string>('SUPABASE_JWT_SECRET') ||
-      'polintrack_storage_hmac_fallback_key_2026';
+      '';
 
     this.localStorageDir = path.resolve(
       process.cwd(),
@@ -62,11 +64,21 @@ export class SupabaseStorageService {
         },
       });
       this.isCloudStorageEnabled = true;
+      this.hmacSecret = configuredSecret;
       this.logger.log(
         `✅ Supabase Cloud Storage inicializado para bucket privado: "${this.bucketName}"`,
       );
     } else {
       this.isCloudStorageEnabled = false;
+
+      // H-13 / H-SEC-03 Fail-fast: Abortar si falta el secreto de firmado en almacenamiento local
+      if (!configuredSecret || configuredSecret.trim().length < 16) {
+        throw new Error(
+          'Configuración insegura detectada: Se requiere JWT_SECRET o SUPABASE_JWT_SECRET (o STORAGE_HMAC_SECRET) (mínimo 16 caracteres) para el firmado seguro de archivos en modo local.',
+        );
+      }
+      this.hmacSecret = configuredSecret;
+
       if (!fs.existsSync(this.localStorageDir)) {
         fs.mkdirSync(this.localStorageDir, { recursive: true });
       }
@@ -74,6 +86,68 @@ export class SupabaseStorageService {
         `⚠️ SUPABASE_SERVICE_ROLE_KEY no configurado o es placeholder. Utilizando almacenamiento local seguro para "${this.bucketName}".`,
       );
     }
+  }
+
+  /**
+   * Valida y resuelve de forma segura una ruta de archivo dentro del directorio de almacenamiento local.
+   * Previene de forma estricta ataques de Path Traversal (H-15):
+   * - Rechaza caracteres nulos (\0).
+   * - Rechaza rutas absolutas directas (ej. C:\... o /...).
+   * - Comprueba que la ruta resuelta se encuentre estrictamente dentro de localStorageDir
+   *   utilizando path.relative y separador de directorio seguro.
+   * - Si el archivo ya existe en disco, verifica que fs.realpathSync no apunte a un enlace simbólico externo.
+   */
+  public validateAndResolveLocalPath(filePath: string): string {
+    if (!filePath || typeof filePath !== 'string') {
+      throw new BadRequestException('Ruta de archivo no especificada o inválida');
+    }
+
+    if (filePath.includes('\0')) {
+      throw new BadRequestException('Ruta de archivo contiene caracteres nulos prohibidos');
+    }
+
+    const normalizedInput = filePath.replace(/\\/g, '/');
+    if (
+      path.isAbsolute(filePath) ||
+      path.isAbsolute(normalizedInput) ||
+      /^[a-zA-Z]:/.test(filePath)
+    ) {
+      throw new BadRequestException('Ruta de archivo absoluta no permitida en almacenamiento');
+    }
+
+    const baseDir = path.resolve(this.localStorageDir);
+    const resolvedTarget = path.resolve(baseDir, filePath);
+
+    // Comprobación de contención con path.relative y prefijo estricto con separador
+    const relative = path.relative(baseDir, resolvedTarget);
+    if (
+      relative.startsWith('..') ||
+      path.isAbsolute(relative) ||
+      !(resolvedTarget === baseDir || resolvedTarget.startsWith(baseDir + path.sep))
+    ) {
+      throw new BadRequestException(
+        'Acceso no autorizado: la ruta intenta acceder fuera del directorio de almacenamiento',
+      );
+    }
+
+    // Comprobación de enlaces simbólicos si el archivo o la ruta ya existe
+    if (fs.existsSync(resolvedTarget)) {
+      const realTarget = fs.realpathSync(resolvedTarget);
+      const realBase = fs.existsSync(baseDir) ? fs.realpathSync(baseDir) : baseDir;
+      const realRelative = path.relative(realBase, realTarget);
+      if (
+        realRelative.startsWith('..') ||
+        path.isAbsolute(realRelative) ||
+        !(realTarget === realBase || realTarget.startsWith(realBase + path.sep))
+      ) {
+        throw new BadRequestException(
+          'Acceso no autorizado: el archivo apunta a una ubicación externa protegida',
+        );
+      }
+      return realTarget;
+    }
+
+    return resolvedTarget;
   }
 
   /**
@@ -104,7 +178,7 @@ export class SupabaseStorageService {
       return { path: data.path };
     } else {
       // Almacenamiento local seguro
-      const absoluteTarget = path.join(this.localStorageDir, filePath);
+      const absoluteTarget = this.validateAndResolveLocalPath(filePath);
       const parentDir = path.dirname(absoluteTarget);
       if (!fs.existsSync(parentDir)) {
         fs.mkdirSync(parentDir, { recursive: true });
@@ -141,6 +215,9 @@ export class SupabaseStorageService {
         expiresInSeconds,
       };
     } else {
+      // Validación previa de contención local (Defensa en profundidad)
+      this.validateAndResolveLocalPath(filePath);
+
       // Generación local de URL firmada mediante HMAC-SHA256
       const expiresAtTimestamp = Math.floor(Date.now() / 1000) + expiresInSeconds;
       const payloadToSign = `${filePath}:${expiresAtTimestamp}`;
@@ -185,7 +262,7 @@ export class SupabaseStorageService {
           );
         }
       } else {
-        const absoluteTarget = path.join(this.localStorageDir, filePath);
+        const absoluteTarget = this.validateAndResolveLocalPath(filePath);
         if (fs.existsSync(absoluteTarget)) {
           fs.unlinkSync(absoluteTarget);
           this.logger.log(
@@ -225,7 +302,7 @@ export class SupabaseStorageService {
       throw new InternalServerErrorException('Firma criptográfica inválida');
     }
 
-    const absoluteTarget = path.join(this.localStorageDir, filePath);
+    const absoluteTarget = this.validateAndResolveLocalPath(filePath);
     if (!fs.existsSync(absoluteTarget)) {
       throw new InternalServerErrorException(
         'El archivo no existe en el almacenamiento local',
